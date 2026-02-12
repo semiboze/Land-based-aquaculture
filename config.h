@@ -2,6 +2,10 @@
 #define CONFIG_H
 
 #include <Arduino.h>
+#include "general.h"
+
+
+static const int T_CNT_PIN = 9;
 
 //====================================================
 // ファームウェア情報
@@ -78,7 +82,7 @@ static const int DEBOUNCE_DELAY_MS = 50;
 //====================================================
 // UV共通設定
 //====================================================
-#define MAX_UV_LAMPS 10
+// #define MAX_UV_LAMPS 10
 #define UV_IN_USE_INTERNAL_PULLUP 0
 
 static const unsigned long UV_FAULT_IGNORE_MS = 5000;
@@ -153,14 +157,50 @@ static const int UV_GROUP_A_PIN = 40;
 static const int UV_GROUP_B_PIN = 41;
 static const int LED_UV_RUN_PIN = 47;
 
+// const int UV_SW_START_PIN   = 5 , UV_SW_STOP_PIN        = 6;
+// const int UV_LAMP_PIN       = 7; // ★★★ T_CNT_PINの定義を削除 ★★★
+const int UV_IN_1_PIN       = 20; // UVランプ1基目の断線警告ピン
+const int UV_IN_2_PIN       = 21; // UVランプ2基目の断線警告ピン
+const int UV_IN_3_PIN       = 22; // UVランプ3基目の断線警告ピン
+const int UV_IN_4_PIN       = 23; // UVランプ4基目の断線警告ピン
+const int UV_IN_5_PIN       = 24; // UVランプ5基目の断線警告ピン
+const int UV_IN_6_PIN       = 25; // UVランプ6基目の断線警告ピン
+const int UV_IN_7_PIN       = 26; // UVランプ7基目の断線警告ピン
+const int UV_IN_8_PIN       = 27; // UVランプ8基目の断線警告ピン
+const int UV_IN_9_PIN       = 28; // UVランプ9基目の断線警告ピン
+const int UV_IN_10_PIN      = 29; // UVランプ10基目の断線警告ピン
+
+const int UV_OUT_1_PIN      = 30; // UVランプ1基目のパイロットランプ出力ピン
+const int UV_OUT_2_PIN      = 31; // UVランプ2基目のパイロットランプ出力ピン
+const int UV_OUT_3_PIN      = 32; // UVランプ3基目のパイロットランプ出力ピン
+const int UV_OUT_4_PIN      = 33; // UVランプ4基目のパイロットランプ出力ピン
+const int UV_OUT_5_PIN      = 34; // UVランプ5基目のパイロットランプ出力ピン
+const int UV_OUT_6_PIN      = 35; // UVランプ6基目のパイロットランプ出力ピン
+const int UV_OUT_7_PIN      = 36; // UVランプ7基目のパイロットランプ出力ピン
+const int UV_OUT_8_PIN      = 37; // UVランプ8基目のパイロットランプ出力ピン
+const int UV_OUT_9_PIN      = 38; // UVランプ9基目のパイロットランプ出力ピン
+const int UV_OUT_10_PIN     = 39; // UVランプ10基目のパイロットランプ出力ピン
+// const int UV_GROUP_A_PIN    = 40; // UVランプグループA制御ピン
+// const int UV_GROUP_B_PIN    = 41; // UVランプグループB制御ピン
+// const int LED_UV_RUN_PIN    = 47; // 操作盤の稼働灯(現在ハード未実装)
+
 // --- UV入力 ---
 static const int UV_IN_PINS[MAX_UV_LAMPS] = {
-  20,21,22,23,24,25,26,27,28,29
+  UV_IN_1_PIN,UV_IN_2_PIN,UV_IN_3_PIN,UV_IN_4_PIN,UV_IN_5_PIN,UV_IN_6_PIN,UV_IN_7_PIN,UV_IN_8_PIN,UV_IN_9_PIN,UV_IN_10_PIN
 };
 
 // --- UV出力 ---
 static const int UV_OUT_PINS[MAX_UV_LAMPS] = {
-  30,31,32,33,34,35,36,37,38,39
+  UV_OUT_1_PIN,UV_OUT_2_PIN,UV_OUT_3_PIN,UV_OUT_4_PIN,UV_OUT_5_PIN,UV_OUT_6_PIN,UV_OUT_7_PIN,UV_OUT_8_PIN,UV_OUT_9_PIN,UV_OUT_10_PIN
 };
+
+static const int PIN_CLK1 = 12;
+static const int PIN_DIO1 = A9;
+
+static const int PIN_CLK2 = 14;
+static const int PIN_DIO2 = 15;
+
+static const int PIN_CLK3 = 16;
+static const int PIN_DIO3 = 17;
 
 #endif

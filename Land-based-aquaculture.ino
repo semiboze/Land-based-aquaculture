@@ -1,4 +1,12 @@
 const char* FirmwareVersion = "20260211_R4";
+#include "general.h"
+#include "config.h"
+#include "system_state.h"
+#include "eeprom_manager.h"
+#include "uv_control.h"
+// SystemStateStruct systemState;
+SystemState systemState;
+
 /**
  * @file dynamic_rpm_pump_controller.ino
  * @brief 統合・改良版 ポンプ＆UVランプコントローラー (ハードウェア自動検知版)
@@ -51,21 +59,21 @@ const char* FirmwareVersion = "20260211_R4";
 // ▼▼▼ 動作設定 ▼▼▼
 // ----------------------------------------------------------------
 // 固定回転数モードで動作する場合の回転数を設定します。
-const int NORMAL_MAX_RPM = 2500;        // 固定回転数モードでの最大回転数
-const int PRIMING_DURATION_SEC = 30;     // プライミングを行う時間（秒）
-const float HOLD_DURATION_SEC = 1.0;    // 最高回転数での保持時間（秒）
-const int PRIMING_MAX_RPM      = 2500;  // プライミング中の最大回転数
-const int PRIMING_MIN_RPM      = 2000;  // プライミング中の最小回転数
-const float PRIMING_CYCLE_SEC = 4.0;    // プライミングの1サイクルの時間（秒）
-// 回転数モードを判定するためのピン番号
-const int MANUAL_RPM_MODE_PIN = 42;     // アナログダイヤルで回転数可変にする場合このピンをGNDに落とす
+// const int NORMAL_MAX_RPM = 2500;        // 固定回転数モードでの最大回転数
+// const int PRIMING_DURATION_SEC = 30;     // プライミングを行う時間（秒）
+// const float HOLD_DURATION_SEC = 1.0;    // 最高回転数での保持時間（秒）
+// const int PRIMING_MAX_RPM      = 2500;  // プライミング中の最大回転数
+// const int PRIMING_MIN_RPM      = 2000;  // プライミング中の最小回転数
+// const float PRIMING_CYCLE_SEC = 4.0;    // プライミングの1サイクルの時間（秒）
+// // 回転数モードを判定するためのピン番号
+// const int MANUAL_RPM_MODE_PIN = 42;     // アナログダイヤルで回転数可変にする場合このピンをGNDに落とす
 
-// ポンプの電流閾値可変モードにするピン番号
-const int MANUAL_THRESHOLD_MODE_PIN = 43;  // アナログダイヤルで閾値調整する場合このピンをGNDに落とす
-//====================================================
-// 電流ピーク検出用 ノイズ下限（センサ未動作/ノイズ対策）
-//====================================================
-const int CURRENT_NOISE_FLOOR = 512;
+// // ポンプの電流閾値可変モードにするピン番号
+// const int MANUAL_THRESHOLD_MODE_PIN = 43;  // アナログダイヤルで閾値調整する場合このピンをGNDに落とす
+// //====================================================
+// // 電流ピーク検出用 ノイズ下限（センサ未動作/ノイズ対策）
+// //====================================================
+// const int CURRENT_NOISE_FLOOR = 512;
 
 // ----------------------------------------------------------------
 // ライブラリのインクルード
@@ -77,35 +85,35 @@ const int CURRENT_NOISE_FLOOR = 512;
 #include "general.h" // デバッグマクロ包含
 // 【変更点】UVコントロール用のヘッダファイルをインクルード
 #include "uv_control.h"
-// ----------------------------------------------------------------
-// ピン定義
-// ----------------------------------------------------------------
-const int HOURMETER_RESET_PIN  = 49; // ★追加★ アワーメーターリセット出力用GPIO（未使用ピン利用）2025年12月11日
-const int PIN_CLK1          = 12, PIN_DIO1              = A9; 
-const int PIN_CLK2          = 14, PIN_DIO2              = 15; 
-const int PIN_CLK3          = 16, PIN_DIO3              = 17;
-const int P_SW_START_PIN    = 2 , P_SW_STOP_PIN         = 3;
-const int P_LAMP_PIN        = 4;
-const int EM_LAMP_PIN = 8;      // 非常停止ランプ (EM_LAMP_PIN) 接続ピン
-const int T_CNT_PIN         = 9;        // ★★★ T_CNT_PINの定義をこちらに移動 ★★★
-const int INPUT_FEEDBACK_LED_PIN = 44;  // スイッチ押下中インジケータLED
-const int LED_PUMP_RUN_PIN  = 45, LED_PUMP_STOP_PIN     = 46; // 操作盤の稼働灯・停止灯 現在ハード未実装
-const int FAN_CTRL_PIN = 48;                // 冷却ファン制御ピン
-const int LED_ISR_PIN       = LED_BUILTIN, LED_SERIAL_RX_PIN     = 50;
-const int RPM_ANALOG_IN_PIN = A0 ;       // 回転数調整ダイヤル可変抵抗 (ポテンショメーター) 接続ピン
-const int CURRENT_ANALOG_IN_PIN = A1;    // ポンプの電流センサー接続ピン
-const int THRESHOLD_ANALOG_IN_PIN = A2;  // [変更点] 電流しきい値調整用のダイヤル可変抵抗を接続するアナログピン
-//==============================
-// DIPスイッチ GPIO割当（A8〜A15）
-//==============================
-const int DIP_SW1_PIN = A8;   // 停電復帰
-const int DIP_SW2_PIN = A9;   // HourMeter bit2 (Pump)
-const int DIP_SW3_PIN = A10;  // HourMeter bit1 (AND/OR)
-const int DIP_SW4_PIN = A11;  // HourMeter bit0 (UV)
-const int DIP_SW5_PIN = A12;  // 予備
-const int DIP_SW6_PIN = A13;  // UV断線判定方式
-const int DIP_SW7_PIN = A14;  // UV自動起動
-const int DIP_SW8_PIN = A15;  // 将来拡張
+// // ----------------------------------------------------------------
+// // ピン定義
+// // ----------------------------------------------------------------
+// const int HOURMETER_RESET_PIN  = 49; // ★追加★ アワーメーターリセット出力用GPIO（未使用ピン利用）2025年12月11日
+// const int PIN_CLK1          = 12, PIN_DIO1              = A9; 
+// const int PIN_CLK2          = 14, PIN_DIO2              = 15; 
+// const int PIN_CLK3          = 16, PIN_DIO3              = 17;
+// const int P_SW_START_PIN    = 2 , P_SW_STOP_PIN         = 3;
+// const int P_LAMP_PIN        = 4;
+// const int EM_LAMP_PIN = 8;      // 非常停止ランプ (EM_LAMP_PIN) 接続ピン
+// const int T_CNT_PIN         = 9;        // ★★★ T_CNT_PINの定義をこちらに移動 ★★★
+// const int INPUT_FEEDBACK_LED_PIN = 44;  // スイッチ押下中インジケータLED
+// const int LED_PUMP_RUN_PIN  = 45, LED_PUMP_STOP_PIN     = 46; // 操作盤の稼働灯・停止灯 現在ハード未実装
+// const int FAN_CTRL_PIN = 48;                // 冷却ファン制御ピン
+// const int LED_ISR_PIN       = LED_BUILTIN, LED_SERIAL_RX_PIN     = 50;
+// const int RPM_ANALOG_IN_PIN = A0 ;       // 回転数調整ダイヤル可変抵抗 (ポテンショメーター) 接続ピン
+// const int CURRENT_ANALOG_IN_PIN = A1;    // ポンプの電流センサー接続ピン
+// const int THRESHOLD_ANALOG_IN_PIN = A2;  // [変更点] 電流しきい値調整用のダイヤル可変抵抗を接続するアナログピン
+// //==============================
+// // DIPスイッチ GPIO割当（A8〜A15）
+// //==============================
+// const int DIP_SW1_PIN = A8;   // 停電復帰
+// const int DIP_SW2_PIN = A9;   // HourMeter bit2 (Pump)
+// const int DIP_SW3_PIN = A10;  // HourMeter bit1 (AND/OR)
+// const int DIP_SW4_PIN = A11;  // HourMeter bit0 (UV)
+// const int DIP_SW5_PIN = A12;  // 予備
+// const int DIP_SW6_PIN = A13;  // UV断線判定方式
+// const int DIP_SW7_PIN = A14;  // UV自動起動
+// const int DIP_SW8_PIN = A15;  // 将来拡張
 
 //==============================
 // DIP設定フラグ
@@ -117,42 +125,43 @@ bool cfg_uvAutoStart             = false;
 static bool uvAutoStarted = false; // [DIP_SW7] UV自動起動用ラッチ
 
 // UVランプ装着数自動検知用のピン定義（4ビットバイナリ）ただし10本まで対応
-const int UV_DETECT_BIT0_PIN = A3; // 1加算 (2^0)
-const int UV_DETECT_BIT1_PIN = A4; // 2加算 (2^1)
-const int UV_DETECT_BIT2_PIN = A5; // 4加算 (2^2)
-const int UV_DETECT_BIT3_PIN = A6; // 8加算 (2^3)
+// const int UV_DETECT_BIT0_PIN = A3; // 1加算 (2^0)
+// const int UV_DETECT_BIT1_PIN = A4; // 2加算 (2^1)
+// const int UV_DETECT_BIT2_PIN = A5; // 4加算 (2^2)
+// const int UV_DETECT_BIT3_PIN = A6; // 8加算 (2^3)
 // ----------------------------------------------------------------
 // グローバル変数
 // ----------------------------------------------------------------
-enum SystemState { STATE_STOPPED, STATE_RUNNING };
-SystemState pumpState = STATE_STOPPED;
-SystemState uvLampState = STATE_STOPPED;   // ← これを必ず追加
+// enum SystemState { STATE_STOPPED, STATE_RUNNING };
+// // SystemState pumpState = STATE_STOPPED;
+systemState.pumpState = STATE_STOPPED;
+// SystemState systemState.uvState = STATE_STOPPED;   // ← これを必ず追加
 
 //====================================================
 // [追加] ポンプ「運転指令」フラグ
 //  - インバータに「回せ」と命令している間 true
-//  - 状態変数pumpStateがズレてもアワメータは回すため
+//  - 状態変数systemState.pumpStateがズレてもアワメータは回すため
 //====================================================
 volatile bool pumpRunCommandActive = false;
 
 // 最後にRPMコマンドを送った時刻（ウォッチドッグ用）
 volatile unsigned long lastRpmCommandMs = 0;
 
-const int SERIAL0_BAUD_RATE    = 2400;
-const int TIMER_INTERVAL_MS   = 50;           // タイマー割り込み間隔 (ms)
-const int LED_ISR_BLINK_INTERVAL_SEC = 1;     // 1秒ごとに点滅させる。変えたければここを変える 2025年12月10日
-const int DEBOUNCE_DELAY_MS   = 50;           // スイッチのチャタリング防止時間 (ms)
-const unsigned long PUMP_TIMEOUT_SEC  = 60;   // 既存の過電流チェック用の時間（既存仕様を維持）
+// const int SERIAL0_BAUD_RATE    = 2400;
+// const int TIMER_INTERVAL_MS   = 50;           // タイマー割り込み間隔 (ms)
+// const int LED_ISR_BLINK_INTERVAL_SEC = 1;     // 1秒ごとに点滅させる。変えたければここを変える 2025年12月10日
+// const int DEBOUNCE_DELAY_MS   = 50;           // スイッチのチャタリング防止時間 (ms)
+// const unsigned long PUMP_TIMEOUT_SEC  = 60;   // 既存の過電流チェック用の時間（既存仕様を維持）
 // ★追加★ ポンプ起動時の「低電流チェック」の猶予時間
-const unsigned long PUMP_STARTUP_TIMEOUT_SEC  = DEFINE_CURRENT_STATUS;  // 起動後電流が閾値に到達するまでの監視タイマー秒 2025-12-09
-const int PUMP_CURRENT_THRESHOLD_DEFAULT = 512; // デフォルトのポンプ電流しきい値
+// const unsigned long PUMP_STARTUP_TIMEOUT_SEC  = DEFINE_CURRENT_STATUS;  // 起動後電流が閾値に到達するまでの監視タイマー秒 2025-12-09
+// const int PUMP_CURRENT_THRESHOLD_DEFAULT = 512; // デフォルトのポンプ電流しきい値
 //====================================================
 // [追加] 過電流停止専用しきい値（※512とは役割が別）
 //====================================================
-const int PUMP_OVERCURRENT_THRESHOLD = 850; // 仮：実機ログ見て調整
+// const int PUMP_OVERCURRENT_THRESHOLD = 850; // 仮：実機ログ見て調整
 
 int PUMP_CURRENT_THRESHOLD      = PUMP_CURRENT_THRESHOLD_DEFAULT;  // ポンプ運転を判断する電流のしきい値
-const int COMMAND_INTERVAL_MS = 300;          // コマンド送信間隔 (ms)
+// const int COMMAND_INTERVAL_MS = 300;          // コマンド送信間隔 (ms)
 // [変更点] 実行時に決定される回転数制御モードを格納する変数
 enum varControlMode { MODE_VOLUME, MODE_FIXED };
 varControlMode rpmControlMode;
@@ -231,13 +240,13 @@ static bool evaluateHourMeterCondition(uint8_t modeBits,
 //====================================================
 // 1: LOWでON（アクティブLOW） / 0: HIGHでON（アクティブHIGH）
 #define FAN_ACTIVE_LOW  0
-#if FAN_ACTIVE_LOW
-  const uint8_t FAN_ON_LEVEL  = LOW;
-  const uint8_t FAN_OFF_LEVEL = HIGH;
-#else
-  const uint8_t FAN_ON_LEVEL  = HIGH;
-  const uint8_t FAN_OFF_LEVEL = LOW;
-#endif
+// #if FAN_ACTIVE_LOW
+//   const uint8_t FAN_ON_LEVEL  = LOW;
+//   const uint8_t FAN_OFF_LEVEL = HIGH;
+// #else
+//   const uint8_t FAN_ON_LEVEL  = HIGH;
+//   const uint8_t FAN_OFF_LEVEL = LOW;
+// #endif
 
 inline void fan_on()  { digitalWrite(FAN_CTRL_PIN, FAN_ON_LEVEL);  }
 inline void fan_off() { digitalWrite(FAN_CTRL_PIN, FAN_OFF_LEVEL); }
@@ -257,38 +266,39 @@ inline void fan_off() { digitalWrite(FAN_CTRL_PIN, FAN_OFF_LEVEL); }
 #define RISE_DELTA               8     // ベースラインから何カウント上がれば「上昇」とみなすか
 #define RISE_CONSECUTIVE         3     // 連続何回上昇したら「成功」と確定するか
 
-enum StartupPhase {
-  STARTUP_IDLE = 0,
-  STARTUP_INRUSH_IGNORE,
-  STARTUP_BASELINE_LEARN,
-  STARTUP_WAIT_RISE,
-  STARTUP_DONE_OK,
-  STARTUP_DONE_NG
-};
+// enum StartupPhase {
+//   STARTUP_IDLE = 0,
+//   STARTUP_INRUSH_IGNORE,
+//   STARTUP_BASELINE_LEARN,
+//   STARTUP_WAIT_RISE,
+//   STARTUP_DONE_OK,
+//   STARTUP_DONE_NG
+// };
 
-StartupPhase startupPhase = STARTUP_IDLE;
+// StartupPhase startupPhase = STARTUP_IDLE;
+startupMonitor_begin();
 
 // 起動判定用カウンタ
-int startupPeakCount = 0;         // 起動後ピーク確定回数（1.5秒単位）
-int baselineMin = 9999;           // 学習中の最小（空回りの代表に使う）
-int baselineSum = 0;              // 学習中の平均算出用
-int baselineCount = 0;
-int baselineAvg = 0;
+// int startupPeakCount = 0;         // 起動後ピーク確定回数（1.5秒単位）
+// int baselineMin = 9999;           // 学習中の最小（空回りの代表に使う）
+// int baselineSum = 0;              // 学習中の平均算出用
+// int baselineCount = 0;
+// int baselineAvg = 0;
 
-int riseConsecutive = 0;          // 上昇連続回数
-bool suctionRiseDetected = false; // 2次上昇を検知したか
+// int riseConsecutive = 0;          // 上昇連続回数
+// bool suctionRiseDetected = false; // 2次上昇を検知したか
 
 // 停電後の復旧用メモリ確保
-#define EEPROM_MAGIC 0xA5
-#define EEPROM_ADDR  0
+// #define EEPROM_MAGIC 0xA5
+// #define EEPROM_ADDR  0
 
-struct PersistState {
-  uint8_t magic;
-  uint8_t pump;
-  uint8_t uv;
-};
+// struct PersistState {
+//   uint8_t magic;
+//   uint8_t pump;
+//   uint8_t uv;
+// };
 
-PersistState persist;
+// PersistState persist;
 #if defined(DEBUG_MODE) || defined(UV_DEBUG_MODE) || defined(PU_DEBUG_MODE)
 //====================================================
 // [DEBUG] アワーメーターモードの意味文字列
@@ -318,23 +328,9 @@ void setup() {
   DEBUG_PRINTLN("--- System Start ---");
   
   //====================================================
-  pinMode(DIP_SW1_PIN, INPUT_PULLUP);
-  pinMode(DIP_SW2_PIN, INPUT_PULLUP);
-  pinMode(DIP_SW3_PIN, INPUT_PULLUP);
-  pinMode(DIP_SW4_PIN, INPUT_PULLUP);
-  pinMode(DIP_SW5_PIN, INPUT_PULLUP);
-  pinMode(DIP_SW6_PIN, INPUT_PULLUP);
-  pinMode(DIP_SW7_PIN, INPUT_PULLUP);
-  delay(5); // プルアップが安定するのを待つ
-  cfg_restoreUvAfterPowerFail = DIP_ON(DIP_SW1_PIN);
-  // 例：DIP_SW2, DIP_SW3, DIP_SW4 を使用すると仮定
-  cfg_hourMeterMode = 0;
-  if (DIP_ON(DIP_SW2_PIN)) cfg_hourMeterMode |= 0b100; // Pump
-  if (DIP_ON(DIP_SW3_PIN)) cfg_hourMeterMode |= 0b010; // AND/OR
-  if (DIP_ON(DIP_SW4_PIN)) cfg_hourMeterMode |= 0b001; // UV
-  // cfg_hourMeterIncludeUv      = (digitalRead(DIP_SW5_PIN) == LOW);
-  cfg_uvFaultAnyOneNg         = DIP_ON(DIP_SW6_PIN);  // UV断線判定方式
-  cfg_uvAutoStart             = DIP_ON(DIP_SW7_PIN);
+  dip_setup();
+  dip_read();
+
   DEBUG_PRINT("DIP_SW1 restore UV = ");
   DEBUG_PRINTLN(cfg_restoreUvAfterPowerFail ? "ON" : "OFF");
   DEBUG_PRINT("DIP_SW2 hourMeterIncludeUv = ");
@@ -449,39 +445,42 @@ void setup() {
   // =================================================
   // EEPROM 復旧処理
   // =================================================
-  bool restored = loadPersistState();
+  // bool restored = loadPersistState();
+  // PersistState persist;
 
+  // bool restored = loadPersistState(persist);
+  
   DEBUG_PRINT("[SETUP] restored=");
   DEBUG_PRINTLN(restored ? "YES" : "NO");
 
-  DEBUG_PRINT("[SETUP] apply pumpState=");
-  DEBUG_PRINTLN(persist.pump);
+  DEBUG_PRINT("[SETUP] apply systemState.pumpState=");
+  // DEBUG_PRINTLN(persist.pump);
 
   DEBUG_PRINT("[SETUP] apply uvState=");
-  DEBUG_PRINTLN(persist.uv);
+  // DEBUG_PRINTLN(persist.uv);
 
-  if (restored) {
-    DEBUG_PRINTLN("EEPROM state restored");
+  // if (restored) {
+  //   DEBUG_PRINTLN("EEPROM state restored");
 
-    // --- ポンプ ---
-    if (persist.pump == 1) {
-      pumpState = STATE_RUNNING;
-      pumpStartTime = millis();
-    } else {
-      pumpState = STATE_STOPPED;
-    }
+  //   // --- ポンプ ---
+  //   if (persist.pump == 1) {
+  //     systemState.pumpState = STATE_RUNNING;
+  //     pumpStartTime = millis();
+  //   } else {
+  //     systemState.pumpState = STATE_STOPPED;
+  //   }
 
-    // --- UV --- 復旧ディップスイッチに基づきメモリ読み込み
-    if (persist.uv == 1 && cfg_restoreUvAfterPowerFail) {
-      uv_force_restore(true);     // 停電前にUVがON かつ DIPで復帰許可
-    } else {
-      uv_force_restore(false);    // DIP OFF または 停電前OFF
-    }
-  } else {
-    DEBUG_PRINTLN("EEPROM not initialized -> SAFE STOP");
-    pumpState = STATE_STOPPED;
-    uvLampState = STATE_STOPPED;
-  }
+  //   // --- UV --- 復旧ディップスイッチに基づきメモリ読み込み
+  //   if (persist.uv == 1 && cfg_restoreUvAfterPowerFail) {
+  //     uv_force_restore(true);     // 停電前にUVがON かつ DIPで復帰許可
+  //   } else {
+  //     uv_force_restore(false);    // DIP OFF または 停電前OFF
+  //   }
+  // } else {
+  //   DEBUG_PRINTLN("EEPROM not initialized -> SAFE STOP");
+  //   systemState.pumpState = STATE_STOPPED;
+  //   systemState.uvState = STATE_STOPPED;
+  // }
 }
 
 // ----------------------------------------------------------------
@@ -672,7 +671,7 @@ void stopPump() {
   //====================================================
   // [重要] 「ポンプ未接続」や「状態ズレ」でも確実に表示を落とす
   //====================================================
-  pumpState = STATE_STOPPED;
+  systemState.pumpState = STATE_STOPPED;
   //====================================================
   // [追加] 停止命令＝運転指令を落とす
   //====================================================
@@ -689,32 +688,32 @@ void stopPump() {
   sendStopCommand();
 
   PU_DEBUG_PRINTLN("Pump Stop Sequence Executed (lamp forced OFF).");
-  persist.pump = 0;
-  savePersistState();
+  // persist.pump = 0;
+  // savePersistState();
   uvAutoStarted = false;   // ★追加：次回起動に備えて解除
 }
 
 // スイッチ検出処理
 void handleSwitchInputs() {
+
   // ポンプスタートボタン
   if (isButtonPressed(pumpStartSwitch)) {
-    if (pumpState == STATE_STOPPED) {
+
+    if (systemState.pumpState == STATE_STOPPED) {
+
       PU_DEBUG_PRINTLN("Pump Start Switch ON");
 
       //====================================================
       // [改善] 体感レスポンス最優先：押した瞬間にランプ点灯
-      // ・ユーザーに「受け付けた」を即表示
       //====================================================
-      digitalWrite(P_LAMP_PIN, HIGH);  // まず点ける（この後エラーならstopPumpで消える）
-      fan_on();                        // ファンも先に回してOK
+      digitalWrite(P_LAMP_PIN, HIGH);
+      fan_on();
 
       //====================================================
       // 起動前に一度停止コマンドを送り、インバーターの状態をリセット
       //====================================================
       PU_DEBUG_PRINTLN("Sending pre-start stop command to clear inverter state.");
       sendStopCommand();
-
-      // ★ここは長いほど体感が悪化するので最小に
       delay(5);
 
       //====================================================
@@ -723,51 +722,50 @@ void handleSwitchInputs() {
       pumpStartupOk        = false;
       pumpStartupError     = false;
       maxCurrentSinceStart = 0;
-      //== 2026年1月14日 追加 =========================
-      // ---- ▼▼▼ ここから追加（吸引判定の初期化） ▼▼▼ ----
-      startupPhase       = STARTUP_INRUSH_IGNORE;
-      startupPeakCount   = 0;
-      baselineMin        = 9999;
-      baselineSum        = 0;
-      baselineCount      = 0;
-      baselineAvg        = 0;
-      riseConsecutive    = 0;
-      suctionRiseDetected = false;
-      // ---- ▲▲▲ ここまで追加 ▲▲▲ ----
 
-      digitalWrite(EM_LAMP_PIN, LOW);  // 以前のエラーで点灯していた非常停止ランプを消灯
+      //==== ▼▼▼ ここから startup_monitorへ移行済みのため不要 ▼▼▼ ====
+
+      // startupPhase       = STARTUP_INRUSH_IGNORE;
+      // startupPeakCount   = 0;
+      // baselineSum        = 0;
+      // baselineCount      = 0;
+      // baselineAvg        = 0;
+      // suctionRiseDetected = false;
+
+      //==== ▲▲▲ 不要部分ここまで ▲▲▲ ====
+
+      // ★ 新方式：startup_monitorを初期化
+      startupMonitor_begin();
+
+      digitalWrite(EM_LAMP_PIN, LOW);
 
       //====================================================
       // 状態遷移
       //====================================================
-      pumpState = STATE_RUNNING;
-      persist.pump = 1;
-      savePersistState();
+      systemState.pumpState = STATE_RUNNING;
+
       pumpStartTime = millis();
 
       //====================================================
-      // [改善] 体感レスポンス向上のため、起動直後に回転数コマンドを即送信
+      // 起動直後に回転数コマンドを即送信
       //====================================================
       rpm_value = getTargetRpm();
       sendRpmCommand(rpm_value);
     }
   }
+
   // ポンプストップボタン
   if (isButtonPressed(pumpStopSwitch)) {
 
-    // 押されたことは必ずログ
     PU_DEBUG_PRINT("Pump Stop Switch ON (state=");
-    PU_DEBUG_PRINT(pumpState == STATE_RUNNING ? "RUNNING" : "STOPPED");
+    PU_DEBUG_PRINT(systemState.pumpState == STATE_RUNNING ? "RUNNING" : "STOPPED");
     PU_DEBUG_PRINTLN(")");
 
-    //====================================================
-    // [改善] 状態に関係なく「強制停止」する
-    // ・pumpStateが何になってても必ず停止コマンド送る
-    // ・ランプも必ず消す
-    //====================================================
+    // 強制停止
     stopPump();
   }
 }
+
 //====================================================
 // [追加] 非常停止ランプ（EM）統合制御
 //====================================================
@@ -784,7 +782,7 @@ static void updateEmLamp() {
 void updateSystemState() {
   rpm_value = getTargetRpm();
 
-  if (pumpState == STATE_RUNNING) {
+  if (systemState.pumpState == STATE_RUNNING) {
     digitalWrite(P_LAMP_PIN, HIGH);
     unsigned long elapsedTimeSec = (millis() - pumpStartTime) / 1000UL;
 
@@ -841,7 +839,7 @@ void updateSystemState() {
 // [DIP_SW7] UV自動起動（ポンプ起動後）
 //====================================================
 if (cfg_uvAutoStart &&
-    pumpState == STATE_RUNNING &&
+    systemState.pumpState == STATE_RUNNING &&
     !uvAutoStarted &&
     !is_uv_running()) {
 
@@ -871,7 +869,7 @@ void updateDisplays() {
   tm2_cur_thr.displayNum(PUMP_CURRENT_THRESHOLD);
 
   tm1_rpm_rpm.displayNum(rpm_value);
-  if (pumpState == STATE_RUNNING) {
+  if (systemState.pumpState == STATE_RUNNING) {
     tm3_cur_pea.displayNum(lastCurrentPeak);
     // tm3_cur_pea.displayNum((millis() - pumpStartTime) / 1000);
   } else {
@@ -1012,7 +1010,7 @@ void handlePeriodicTasks() {
   commandTimerCount++;
   if (commandTimerCount >= (COMMAND_INTERVAL_MS / TIMER_INTERVAL_MS)) {
     commandTimerCount = 0;
-    if (pumpState == STATE_RUNNING) {
+    if (systemState.pumpState == STATE_RUNNING) {
       sendRpmCommand(rpm_value);
     }else{
     }
@@ -1095,7 +1093,7 @@ int readCurrentSensorAdc() {
   // 擬似モード
 
   // ポンプ停止中は「最低値」固定（センサーオフ相当）
-  if (pumpState != STATE_RUNNING) {
+  if (systemState.pumpState != STATE_RUNNING) {
     return 512;
   }
 
@@ -1130,130 +1128,108 @@ int readCurrentSensorAdc() {
 
 // ポンプのピーク電流を測定
 void measurePeakCurrent() {
+
   // --- 移動平均フィルタ用の静的変数 ---
   static bool is_initialized = false;
   static int readings[MOVING_AVG_SIZE];
   static int readIndex = 0;
   static long total = 0;
-  // ★追加★ LED点滅用カウンタ（タイマータスク呼び出し回数） 2025年12月10日
   static int ledBlinkCnt = 0;
 
   // --- ピーク検出用の静的変数 ---
   static int analog_cnt = 0;
-  // ADCの有効範囲の下限値(512)をピークの初期値（兼、最低値）とする
   static int current_reading_max = 512;
 
-  // --- 初回実行時にフィルタの変数を初期化する処理 ---
+  // --- 初回初期化 ---
   if (!is_initialized) {
     for (int i = 0; i < MOVING_AVG_SIZE; i++) {
-      readings[i] = 512; // 想定される最低値で配列を埋める
+      readings[i] = 512;
     }
-    total = 512L * MOVING_AVG_SIZE; // long型で合計値を計算しておく
+    total = 512L * MOVING_AVG_SIZE;
     is_initialized = true;
   }
-  
-  // ★ここで一定時間ごとにだけLEDをトグル★ 2025年12月10日
-  // TIMER_INTERVAL_MSごとにこの関数が呼ばれる想定なので、
-  // 「(秒数 * 1000) / TIMER_INTERVAL_MS」回呼ばれたら1回トグルする。
+
+  // --- LEDトグル ---
   ledBlinkCnt++;
   if (ledBlinkCnt >= (LED_ISR_BLINK_INTERVAL_SEC * 1000 / TIMER_INTERVAL_MS)) {
     ledBlinkCnt = 0;
     // digitalWrite(LED_ISR_PIN, !digitalRead(LED_ISR_PIN));
   }
-  // --- 移動平均フィルタの計算 ---
-  // 1. 合計から一番古い測定値を引く
-  total = total - readings[readIndex];
-  
-  // 2. ADCから新しい値を読み取る
-  // int new_reading = analogRead(CURRENT_ANALOG_IN_PIN);
-  int new_reading = readCurrentSensorAdc(); // ← 統一窓口から取得
 
-  
-  // 3. 新しい測定値を配列に格納（古い値は上書きされる）
+  // --- 移動平均処理 ---
+  total -= readings[readIndex];
+
+  int new_reading = readCurrentSensorAdc();
+
   readings[readIndex] = new_reading;
-  
-  // 4. 合計に新しい測定値を足す
-  total = total + readings[readIndex];
-  
-  // 5. 次に上書きする配列の場所を更新
+  total += readings[readIndex];
+
   readIndex++;
   if (readIndex >= MOVING_AVG_SIZE) {
     readIndex = 0;
   }
-  
-  // 6. 平均値を計算して「平滑化された現在値」とする
+
   int smoothed_val = total / MOVING_AVG_SIZE;
 
-  // --- ピーク検出（平滑化された値を使用）---
-  // 平滑化された値が、今までの最大値より大きいかチェック
+  // --- ピーク検出 ---
   if (smoothed_val > current_reading_max) {
-    // 範囲内の最大値として更新
     if (smoothed_val <= 1023) {
       current_reading_max = smoothed_val;
     }
   }
 
-  // --- 1.5秒ごとにピーク値を確定 ---
+  // --- 1.5秒ごとにピーク確定 ---
   analog_cnt++;
   if (analog_cnt >= (1500 / TIMER_INTERVAL_MS)) {
 
-    // ★ 修正点：固定512ではなく「ノイズ下限」で判定
     if (current_reading_max > CURRENT_NOISE_FLOOR) {
+
       lastCurrentPeak = current_reading_max;
 
       //====================================================
-      // ▼▼▼ 吸引判定ステートマシン（品質評価） ▼▼▼
+      // ▼▼▼ 旧吸引判定ステートマシン（完全に不要） ▼▼▼
+      // ※ startup_monitorへ移行済み
       //====================================================
-      if (pumpState == STATE_RUNNING && !pumpStartupError && !pumpStartupOk) {
 
-        startupPeakCount++;
+      /*
+      startupPeakCount++;
 
-        if (startupPhase == STARTUP_INRUSH_IGNORE) {
-          if (startupPeakCount >= INRUSH_IGNORE_PEAKS) {
-            startupPhase = STARTUP_BASELINE_LEARN;
-            baselineMin   = 9999;
-            baselineSum   = 0;
-            baselineCount = 0;
-          }
+      if (startupPhase == STARTUP_INRUSH_IGNORE) {
+        ...
+      }
+      else if (startupPhase == STARTUP_BASELINE_LEARN) {
+        ...
+      }
+      else if (startupPhase == STARTUP_WAIT_RISE) {
+        ...
+      }
+      */
+
+      //====================================================
+      // ▲▲▲ 旧ステートマシンここまで不要 ▲▲▲
+      //====================================================
+
+
+      // ★ 新方式：startup_monitorへピーク値を渡す
+      if (systemState.pumpState == STATE_RUNNING &&
+          !pumpStartupError &&
+          !pumpStartupOk) {
+
+        startupMonitor_update(lastCurrentPeak);
+
+        if (startupMonitor_isOk()) {
+          pumpStartupOk = true;
+          PU_DEBUG_PRINTLN("Suction rise detected (quality OK).");
         }
-        else if (startupPhase == STARTUP_BASELINE_LEARN) {
-          baselineMin = min(baselineMin, lastCurrentPeak);
-          baselineSum += lastCurrentPeak;
-          baselineCount++;
 
-          if (baselineCount >= BASELINE_LEARN_PEAKS) {
-            baselineAvg = baselineSum / baselineCount;
-            startupPhase = STARTUP_WAIT_RISE;
-            riseConsecutive = 0;
-
-            PU_DEBUG_PRINT("Baseline learned. min=");
-            PU_DEBUG_PRINT(baselineMin);
-            PU_DEBUG_PRINT(" avg=");
-            PU_DEBUG_PRINTLN(baselineAvg);
-          }
-        }
-        else if (startupPhase == STARTUP_WAIT_RISE) {
-          int riseLine = baselineAvg + RISE_DELTA;
-
-          if (lastCurrentPeak >= riseLine) {
-            riseConsecutive++;
-          } else {
-            riseConsecutive = 0;
-          }
-
-          if (riseConsecutive >= RISE_CONSECUTIVE) {
-            suctionRiseDetected = true;
-            startupPhase = STARTUP_DONE_OK;
-            PU_DEBUG_PRINTLN("Suction rise detected (quality OK).");
-          }
+        if (startupMonitor_isNg()) {
+          pumpStartupError = true;
+          PU_DEBUG_PRINTLN("Suction rise NOT detected (timeout NG).");
         }
       }
-      //====================================================
-      // ▲▲▲ ここまで品質評価 ▲▲▲
-      //====================================================
 
-      // ★ 起動最低条件（②で復活させた本命）
-      if (pumpState == STATE_RUNNING &&
+      // ★ 起動最低条件（閾値判定）
+      if (systemState.pumpState == STATE_RUNNING &&
           !pumpStartupOk &&
           !pumpStartupError &&
           lastCurrentPeak >= PUMP_CURRENT_THRESHOLD) {
@@ -1265,16 +1241,17 @@ void measurePeakCurrent() {
         PU_DEBUG_PRINT(" threshold=");
         PU_DEBUG_PRINTLN(PUMP_CURRENT_THRESHOLD);
       }
+
     } else {
       lastCurrentPeak = 0;
       PU_DEBUG_PRINTLN("No valid peak detected.");
     }
 
-    // 次周期へ
     current_reading_max = CURRENT_NOISE_FLOOR;
     analog_cnt = 0;
   }
 }
+
 
 /**
  * @brief 実行時モードに応じて目標回転数を取得する（サインカーブ・プライミング機能付き）
@@ -1282,7 +1259,7 @@ void measurePeakCurrent() {
  */
 int getTargetRpm() {
   // ポンプが運転中で、かつ起動後プライミング時間内の場合にシーケンスを実行
-  if (pumpState == STATE_RUNNING) {
+  if (systemState.pumpState == STATE_RUNNING) {
     unsigned long elapsedTimeMillis = millis() - pumpStartTime;
     if (elapsedTimeMillis < (PRIMING_DURATION_SEC * 1000UL)) {
       // 1. 定数を定義
@@ -1548,44 +1525,44 @@ void pump_write(const uint8_t* cmd, uint8_t len, const char* label) {
 }
 
 // EEPROMから状態を読む
-bool loadPersistState() {
-  EEPROM.get(EEPROM_ADDR, persist);
+// bool loadPersistState() {
+//   EEPROM.get(EEPROM_ADDR, persist);
 
-  DEBUG_PRINT("[EEPROM] read magic=");
-  DEBUG_PRINT(persist.magic, HEX);
-  DEBUG_PRINT(" pump=");
-  DEBUG_PRINT(persist.pump);
-  DEBUG_PRINT(" uv=");
-  DEBUG_PRINTLN(persist.uv);
+//   DEBUG_PRINT("[EEPROM] read magic=");
+//   DEBUG_PRINT(persist.magic, HEX);
+//   DEBUG_PRINT(" pump=");
+//   DEBUG_PRINT(persist.pump);
+//   DEBUG_PRINT(" uv=");
+//   DEBUG_PRINTLN(persist.uv);
 
-  if (persist.magic != EEPROM_MAGIC) {
-    DEBUG_PRINTLN("[EEPROM] INVALID -> initialize");
+//   if (persist.magic != EEPROM_MAGIC) {
+//     DEBUG_PRINTLN("[EEPROM] INVALID -> initialize");
 
-    persist.magic = EEPROM_MAGIC;
-    persist.pump  = 0;
-    persist.uv    = 0;
+//     persist.magic = EEPROM_MAGIC;
+//     persist.pump  = 0;
+//     persist.uv    = 0;
 
-    EEPROM.put(EEPROM_ADDR, persist);
+//     EEPROM.put(EEPROM_ADDR, persist);
 
-    DEBUG_PRINTLN("[EEPROM] initialized and saved");
-    return false;
-  }
+//     DEBUG_PRINTLN("[EEPROM] initialized and saved");
+//     return false;
+//   }
 
-  DEBUG_PRINTLN("[EEPROM] VALID");
-  return true;
-}
+//   DEBUG_PRINTLN("[EEPROM] VALID");
+//   return true;
+// }
 
-// 状態をEEPROMへ保存
-void savePersistState() {
-  persist.magic = EEPROM_MAGIC;
+// // 状態をEEPROMへ保存
+// void savePersistState() {
+//   persist.magic = EEPROM_MAGIC;
 
-  DEBUG_PRINT("[EEPROM] SAVE pump=");
-  DEBUG_PRINT(persist.pump);
-  DEBUG_PRINT(" uv=");
-  DEBUG_PRINTLN(persist.uv);
+//   DEBUG_PRINT("[EEPROM] SAVE pump=");
+//   DEBUG_PRINT(persist.pump);
+//   DEBUG_PRINT(" uv=");
+//   DEBUG_PRINTLN(persist.uv);
 
-  EEPROM.put(EEPROM_ADDR, persist);
-}
+//   EEPROM.put(EEPROM_ADDR, persist);
+// }
 //====================================================
 // [追加] アワーメーター判定ロジック（3bit DIP対応）
 // bit2 : Pump条件

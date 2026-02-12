@@ -65,7 +65,7 @@ extern Switch pumpStopSwitch;
 static const uint8_t RELAY_ON  = LOW;
 static const uint8_t RELAY_OFF = HIGH;
 
-const int MAX_UV_LAMPS = 10;
+// const int MAX_UV_LAMPS = 10;
 
 //====================================================
 // UV接続検知入力のモード設定

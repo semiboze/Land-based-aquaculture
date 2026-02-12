@@ -1,5 +1,8 @@
+#include "general.h"
+#include "config.h"
+#include "system_state.h"
+#include "eeprom_manager.h"
 #include "uv_control.h"
-#include "general.h" // デバッグマクロ包含
 
 // ----------------------------------------------------------------
 // [仕様切り替えスイッチ]
@@ -8,7 +11,7 @@
 
 // [点滅仕様] 接触不良/ランプ切れ(=NG)は常に点滅させる
 //=========================================================
-const int UV_BLINK_INTERVAL_MS = 500; // 点滅間隔 (ミリ秒)
+// const int UV_BLINK_INTERVAL_MS = 500; // 点滅間隔 (ミリ秒)
 
 // --- グローバル変数 ---
 int numActiveUvLamps = 0; // 実行時に確定する、実際に接続されているランプの数
@@ -45,7 +48,7 @@ static bool uvBroken[MAX_UV_LAMPS] = {false};
 // UV断線チェックを有効にするかどうか
 static bool uvFaultCheckEnabled = false;
 // UV起動直後は断線判定を行わない猶予時間
-const unsigned long UV_FAULT_IGNORE_MS = 5000; // 5秒推奨
+// const unsigned long UV_FAULT_IGNORE_MS = 5000; // 5秒推奨
 
 //=========================================================
 // [追加] UV入力の「接続/断線/浮き」を外付け抵抗なしで判定する
@@ -64,42 +67,42 @@ enum UvSense {
 static UvSense readUvSenseNoResistor(int pin);
 
 // ▼▼▼ UV機能定義 ▼▼▼
-const int UV_SW_START_PIN   = 5 , UV_SW_STOP_PIN        = 6;
-const int UV_LAMP_PIN       = 7; // ★★★ T_CNT_PINの定義を削除 ★★★
-const int UV_IN_1_PIN       = 20; // UVランプ1基目の断線警告ピン
-const int UV_IN_2_PIN       = 21; // UVランプ2基目の断線警告ピン
-const int UV_IN_3_PIN       = 22; // UVランプ3基目の断線警告ピン
-const int UV_IN_4_PIN       = 23; // UVランプ4基目の断線警告ピン
-const int UV_IN_5_PIN       = 24; // UVランプ5基目の断線警告ピン
-const int UV_IN_6_PIN       = 25; // UVランプ6基目の断線警告ピン
-const int UV_IN_7_PIN       = 26; // UVランプ7基目の断線警告ピン
-const int UV_IN_8_PIN       = 27; // UVランプ8基目の断線警告ピン
-const int UV_IN_9_PIN       = 28; // UVランプ9基目の断線警告ピン
-const int UV_IN_10_PIN      = 29; // UVランプ10基目の断線警告ピン
+// const int UV_SW_START_PIN   = 5 , UV_SW_STOP_PIN        = 6;
+// const int UV_LAMP_PIN       = 7; // ★★★ T_CNT_PINの定義を削除 ★★★
+// const int UV_IN_1_PIN       = 20; // UVランプ1基目の断線警告ピン
+// const int UV_IN_2_PIN       = 21; // UVランプ2基目の断線警告ピン
+// const int UV_IN_3_PIN       = 22; // UVランプ3基目の断線警告ピン
+// const int UV_IN_4_PIN       = 23; // UVランプ4基目の断線警告ピン
+// const int UV_IN_5_PIN       = 24; // UVランプ5基目の断線警告ピン
+// const int UV_IN_6_PIN       = 25; // UVランプ6基目の断線警告ピン
+// const int UV_IN_7_PIN       = 26; // UVランプ7基目の断線警告ピン
+// const int UV_IN_8_PIN       = 27; // UVランプ8基目の断線警告ピン
+// const int UV_IN_9_PIN       = 28; // UVランプ9基目の断線警告ピン
+// const int UV_IN_10_PIN      = 29; // UVランプ10基目の断線警告ピン
 
-const int UV_OUT_1_PIN      = 30; // UVランプ1基目のパイロットランプ出力ピン
-const int UV_OUT_2_PIN      = 31; // UVランプ2基目のパイロットランプ出力ピン
-const int UV_OUT_3_PIN      = 32; // UVランプ3基目のパイロットランプ出力ピン
-const int UV_OUT_4_PIN      = 33; // UVランプ4基目のパイロットランプ出力ピン
-const int UV_OUT_5_PIN      = 34; // UVランプ5基目のパイロットランプ出力ピン
-const int UV_OUT_6_PIN      = 35; // UVランプ6基目のパイロットランプ出力ピン
-const int UV_OUT_7_PIN      = 36; // UVランプ7基目のパイロットランプ出力ピン
-const int UV_OUT_8_PIN      = 37; // UVランプ8基目のパイロットランプ出力ピン
-const int UV_OUT_9_PIN      = 38; // UVランプ9基目のパイロットランプ出力ピン
-const int UV_OUT_10_PIN     = 39; // UVランプ10基目のパイロットランプ出力ピン
-const int UV_GROUP_A_PIN    = 40; // UVランプグループA制御ピン
-const int UV_GROUP_B_PIN    = 41; // UVランプグループB制御ピン
-const int LED_UV_RUN_PIN    = 47; // 操作盤の稼働灯(現在ハード未実装)
+// const int UV_OUT_1_PIN      = 30; // UVランプ1基目のパイロットランプ出力ピン
+// const int UV_OUT_2_PIN      = 31; // UVランプ2基目のパイロットランプ出力ピン
+// const int UV_OUT_3_PIN      = 32; // UVランプ3基目のパイロットランプ出力ピン
+// const int UV_OUT_4_PIN      = 33; // UVランプ4基目のパイロットランプ出力ピン
+// const int UV_OUT_5_PIN      = 34; // UVランプ5基目のパイロットランプ出力ピン
+// const int UV_OUT_6_PIN      = 35; // UVランプ6基目のパイロットランプ出力ピン
+// const int UV_OUT_7_PIN      = 36; // UVランプ7基目のパイロットランプ出力ピン
+// const int UV_OUT_8_PIN      = 37; // UVランプ8基目のパイロットランプ出力ピン
+// const int UV_OUT_9_PIN      = 38; // UVランプ9基目のパイロットランプ出力ピン
+// const int UV_OUT_10_PIN     = 39; // UVランプ10基目のパイロットランプ出力ピン
+// const int UV_GROUP_A_PIN    = 40; // UVランプグループA制御ピン
+// const int UV_GROUP_B_PIN    = 41; // UVランプグループB制御ピン
+// const int LED_UV_RUN_PIN    = 47; // 操作盤の稼働灯(現在ハード未実装)
 
 // 対応する可能性のある最大ランプ数でピン配列を定義しておく
-const int uvInPins[MAX_UV_LAMPS] = {
-  UV_IN_1_PIN, UV_IN_2_PIN, UV_IN_3_PIN, UV_IN_4_PIN, UV_IN_5_PIN,
-  UV_IN_6_PIN, UV_IN_7_PIN, UV_IN_8_PIN, UV_IN_9_PIN, UV_IN_10_PIN
-};
-const int uvOutPins[MAX_UV_LAMPS] = {
-  UV_OUT_1_PIN, UV_OUT_2_PIN, UV_OUT_3_PIN, UV_OUT_4_PIN, UV_OUT_5_PIN,
-  UV_OUT_6_PIN, UV_OUT_7_PIN, UV_OUT_8_PIN, UV_OUT_9_PIN, UV_OUT_10_PIN
-};
+// const int uvInPins[MAX_UV_LAMPS] = {
+//   UV_IN_1_PIN, UV_IN_2_PIN, UV_IN_3_PIN, UV_IN_4_PIN, UV_IN_5_PIN,
+//   UV_IN_6_PIN, UV_IN_7_PIN, UV_IN_8_PIN, UV_IN_9_PIN, UV_IN_10_PIN
+// };
+// const int uvOutPins[MAX_UV_LAMPS] = {
+//   UV_OUT_1_PIN, UV_OUT_2_PIN, UV_OUT_3_PIN, UV_OUT_4_PIN, UV_OUT_5_PIN,
+//   UV_OUT_6_PIN, UV_OUT_7_PIN, UV_OUT_8_PIN, UV_OUT_9_PIN, UV_OUT_10_PIN
+// };
 //=========================================================
 // [追加] NGラッチ（接触不良の瞬断を見逃さない）
 //  - NGを検出したら一定時間点滅を維持する
@@ -107,13 +110,13 @@ const int uvOutPins[MAX_UV_LAMPS] = {
 static unsigned long uvNgLatchUntilMs[MAX_UV_LAMPS] = {0};
 
 // NGを何msラッチするか（目視できる最低時間）
-const unsigned long UV_NG_LATCH_MS = 3000;
+// const unsigned long UV_NG_LATCH_MS = 3000;
 
 // UVランプの数を自動で計算
 // const int NUM_UV_LAMPS = sizeof(uvInPins) / sizeof(uvInPins[0]);
 
 // グローバル変数
-// SystemState uvLampState = STATE_STOPPED;
+// SystemState systemState.uvState = STATE_STOPPED;
 Switch uvStartSwitch   = {UV_SW_START_PIN,  HIGH, HIGH, 0};
 Switch uvStopSwitch    = {UV_SW_STOP_PIN,   HIGH, HIGH, 0};
 
@@ -217,7 +220,7 @@ void checkUvLampConnection() {
     //=========================================================
     // RUNNING：通常監視（OK=点灯 / NG=点滅(ラッチあり)）
     //=========================================================
-    if (uvLampState == STATE_RUNNING) {
+    if (systemState.uvState == STATE_RUNNING) {
       bool ok = isUvSignalOk(uvInPins[i]);
       driveUvIndicator(i, ok);
       continue;
@@ -244,7 +247,7 @@ void checkUvLampConnection() {
     lastDebugPrintTime = millis();
 
     UV_DEBUG_PRINT("UV LANP (state=");
-    UV_DEBUG_PRINT(uvLampState == STATE_RUNNING ? "RUNNING" : "STOPPED");
+    UV_DEBUG_PRINT(systemState.uvState == STATE_RUNNING ? "RUNNING" : "STOPPED");
     UV_DEBUG_PRINTLN(")");
 
     UV_DEBUG_PRINT("UV Lamps Status ");
@@ -279,10 +282,12 @@ void handleUvSwitchInputs() {
     // ★追加★ UV関連警告は必ず消す
     // digitalWrite(EM_LAMP_PIN, LOW);
 
-    if (uvLampState == STATE_RUNNING) {
-      uvLampState = STATE_STOPPED;
-      persist.uv = 0;
-      savePersistState();
+    if (systemState.uvState == STATE_RUNNING) {
+      systemState.uvState = STATE_STOPPED;
+      // persist.uv = 0;
+      // savePersistState();
+      // ★ EEPROMへ保存（新方式）
+      eepromSave(systemState);
       UV_DEBUG_PRINTLN("UV Stop Switch ON");
     }
 
@@ -318,7 +323,7 @@ void handleUvSwitchInputs() {
     UV_DEBUG_PRINT("   PIN29 mode=");
     UV_DEBUG_PRINTLN(digitalRead(29));
 
-    if (uvLampState == STATE_STOPPED) {
+    if (systemState.uvState == STATE_STOPPED) {
 
       // 起動条件未達：UV本体は動かさないが、警告点滅はラッチ
       if (!pumpStartupOk) {
@@ -331,15 +336,22 @@ void handleUvSwitchInputs() {
         uvMissingBlinkActive = true;
         uvCheckStartMs = millis();   // ★追加  
         // ★★★ ここを追加 ★★★
-        persist.uv = 1;
-        savePersistState();
+        // persist.uv = 1;
+        // savePersistState();
+        systemState.uvState = STATE_RUNNING;
+        eepromSave(systemState);
         return;
       }
 
       // 起動条件OK：通常RUNNING
-      uvLampState = STATE_RUNNING;
-      persist.uv = 1;
-      savePersistState();
+      // systemState.uvState = STATE_RUNNING;
+      // persist.uv = 1;
+      // savePersistState();
+// 起動条件OK：通常RUNNING
+systemState.uvState = STATE_RUNNING;
+
+// ★ EEPROMへ保存（新方式）
+eepromSave(systemState);
 
       UV_DEBUG_PRINTLN("UV Start Switch ON");
       // ★即時に状態表示（10秒待たない）
@@ -370,7 +382,7 @@ void updateUvSystemState() {
   //  - RUNNING中は当然点灯
   //  - RUNNINGでなくても uvRunLampLatched が true なら点灯（警告点滅中など）
   //=========================================================
-  if (uvLampState == STATE_RUNNING || uvRunLampLatched) {
+  if (systemState.uvState == STATE_RUNNING || uvRunLampLatched) {
     digitalWrite(UV_LAMP_PIN, HIGH);
   } else {
     digitalWrite(UV_LAMP_PIN, LOW);
@@ -378,7 +390,7 @@ void updateUvSystemState() {
   //=========================================================
   // [UV本体リレー] RUNNING または チェック強制ON のときにON
   //=========================================================
-  if (uvLampState == STATE_RUNNING || uvRelayForceOnForCheck) {
+  if (systemState.uvState == STATE_RUNNING || uvRelayForceOnForCheck) {
     digitalWrite(UV_GROUP_A_PIN, RELAY_ON);
     digitalWrite(UV_GROUP_B_PIN, RELAY_ON);
   } else {
@@ -450,7 +462,7 @@ bool is_uv_running() {
   }
 
   // ★リレーON中も「運転扱い」にする
-  if (uvLampState == STATE_RUNNING) {
+  if (systemState.uvState == STATE_RUNNING) {
     return true;
   }
 
@@ -591,13 +603,13 @@ static UvSense readUvSenseNoResistor(int pin) {
 }
 void uv_force_restore(bool run) {
   if (run) {
-    uvLampState = STATE_RUNNING;
+    systemState.uvState = STATE_RUNNING;
     uvFaultCheckEnabled = true;   // ★追加★
     uvRunLampLatched = true;      // ★必須
     uvMissingBlinkActive = false;
     uvRelayForceOnForCheck = false;
   } else {
-    uvLampState = STATE_STOPPED;
+    systemState.uvState = STATE_STOPPED;
     uvRunLampLatched = false;
     uvRelayForceOnForCheck = false;
   }
