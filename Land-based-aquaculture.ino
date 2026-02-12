@@ -1,12 +1,13 @@
-const char* FirmwareVersion = "20260211_R4";
 #include "general.h"
 #include "config.h"
 #include "system_state.h"
+#include "startup_monitor.h"
 #include "eeprom_manager.h"
 #include "uv_control.h"
+
 // SystemStateStruct systemState;
 SystemState systemState;
-
+// const char* FirmwareVersion = "20260211_R4";
 /**
  * @file dynamic_rpm_pump_controller.ino
  * @brief 統合・改良版 ポンプ＆UVランプコントローラー (ハードウェア自動検知版)
@@ -27,33 +28,30 @@ SystemState systemState;
  *     12本の場合  1  1  0  0  → 12本 → ただし10本までしか対応していません
  * [注意]ピン42, 43, A3～A7はプルアップ抵抗内蔵のINPUT_PULLUPモードで使用してください。
  */
-#define DEBUG_MODE          // デバッグ用シリアル出力を有効にする場合はコメントアウトを外す
-// #define UV_DEBUG_MODE       // UV装置制御関連のデバッグ
-// #define PU_DEBUG_MODE       // ポンプ制御関連のデバッグ
 
 /*  ポンプ起動後電流が閾値に到達するまでの監視タイマー(秒)
     ポンプと水槽の距離によって変動させる必要があるが最大長さに合わせておくのもあり*/
-#define DEFINE_CURRENT_STATUS 30
+// #define DEFINE_CURRENT_STATUS 30
 //====================================================
 // [追加] 電流センサー擬似モード
 //  - 1: 擬似電流を生成して動作確認
 //  - 0: 実機の analogRead(A1) を読む
 //====================================================
-#define CURRENT_SIMULATION 0
+// #define CURRENT_SIMULATION 0
 
 //====================================================
 // [追加] 擬似シナリオ選択
 //  - 0: 吸える（2次上昇あり）
 //  - 1: 吸えない（2次上昇なし→タイムアウトで停止）
 //====================================================
-#define SIM_SCENARIO 0
+// #define SIM_SCENARIO 0
 
 //====================================================
 // [追加] 試運転バイパス（安全停止・警告を無効化）
 //  - 1: どんな検出でも止めない / EMランプ点灯しない
 //  - 0: 通常運用（現状の安全停止あり）
 //====================================================
-#define FORCE_RUN_NO_STOP 1
+// #define FORCE_RUN_NO_STOP 1
 
 // ----------------------------------------------------------------
 // ▼▼▼ 動作設定 ▼▼▼
@@ -134,7 +132,7 @@ static bool uvAutoStarted = false; // [DIP_SW7] UV自動起動用ラッチ
 // ----------------------------------------------------------------
 // enum SystemState { STATE_STOPPED, STATE_RUNNING };
 // // SystemState pumpState = STATE_STOPPED;
-systemState.pumpState = STATE_STOPPED;
+// systemState.pumpState = STATE_STOPPED;
 // SystemState systemState.uvState = STATE_STOPPED;   // ← これを必ず追加
 
 //====================================================
@@ -142,7 +140,7 @@ systemState.pumpState = STATE_STOPPED;
 //  - インバータに「回せ」と命令している間 true
 //  - 状態変数systemState.pumpStateがズレてもアワメータは回すため
 //====================================================
-volatile bool pumpRunCommandActive = false;
+// volatile bool pumpRunCommandActive = false;
 
 // 最後にRPMコマンドを送った時刻（ウォッチドッグ用）
 volatile unsigned long lastRpmCommandMs = 0;
@@ -276,7 +274,7 @@ inline void fan_off() { digitalWrite(FAN_CTRL_PIN, FAN_OFF_LEVEL); }
 // };
 
 // StartupPhase startupPhase = STARTUP_IDLE;
-startupMonitor_begin();
+// startupMonitor_begin();
 
 // 起動判定用カウンタ
 // int startupPeakCount = 0;         // 起動後ピーク確定回数（1.5秒単位）
@@ -317,6 +315,17 @@ static const char* hourModeToString(uint8_t mode) {
   }
 }
 #endif
+void initializeSystemState() {
+  // --- 初期状態 ---
+  systemState.pumpState = STATE_STOPPED;
+  systemState.uvState   = STATE_STOPPED;
+  systemState.pumpRunCommandActive = false;
+  systemState.pumpStartupOk = false;
+  systemState.pumpStartupError = false;
+  systemState.pumpStartTime = 0;
+  systemState.maxCurrentSinceStart = 0;
+  systemState.uvHalfBrokenWarning = false;
+}
 
 // ----------------------------------------------------------------
 // setup() - 初期化処理
@@ -327,6 +336,7 @@ void setup() {
   PUMP_SERIAL.begin(2400);       // ← いまインバーターに合わせている速度にする
   DEBUG_PRINTLN("--- System Start ---");
   
+  initializeSystemState();
   //====================================================
   dip_setup();
   dip_read();
@@ -429,8 +439,7 @@ void setup() {
   }
   
   initializePins();
-  // 検出したランプの数を渡して、UVモジュールを初期化
-  // detectedLampsが0なら、uv_setupは何もしない
+
   uv_setup(detectedLamps); 
   
   initializeDisplays();
@@ -442,45 +451,13 @@ void setup() {
   #ifdef PU_DEBUG_MODE
     tm1_rpm_rpm.displayNum(123); tm2_cur_thr.displayNum(456); tm3_cur_pea.displayNum(789);
   #endif
-  // =================================================
-  // EEPROM 復旧処理
-  // =================================================
-  // bool restored = loadPersistState();
-  // PersistState persist;
-
-  // bool restored = loadPersistState(persist);
   
   DEBUG_PRINT("[SETUP] restored=");
   DEBUG_PRINTLN(restored ? "YES" : "NO");
 
   DEBUG_PRINT("[SETUP] apply systemState.pumpState=");
-  // DEBUG_PRINTLN(persist.pump);
 
   DEBUG_PRINT("[SETUP] apply uvState=");
-  // DEBUG_PRINTLN(persist.uv);
-
-  // if (restored) {
-  //   DEBUG_PRINTLN("EEPROM state restored");
-
-  //   // --- ポンプ ---
-  //   if (persist.pump == 1) {
-  //     systemState.pumpState = STATE_RUNNING;
-  //     pumpStartTime = millis();
-  //   } else {
-  //     systemState.pumpState = STATE_STOPPED;
-  //   }
-
-  //   // --- UV --- 復旧ディップスイッチに基づきメモリ読み込み
-  //   if (persist.uv == 1 && cfg_restoreUvAfterPowerFail) {
-  //     uv_force_restore(true);     // 停電前にUVがON かつ DIPで復帰許可
-  //   } else {
-  //     uv_force_restore(false);    // DIP OFF または 停電前OFF
-  //   }
-  // } else {
-  //   DEBUG_PRINTLN("EEPROM not initialized -> SAFE STOP");
-  //   systemState.pumpState = STATE_STOPPED;
-  //   systemState.uvState = STATE_STOPPED;
-  // }
 }
 
 // ----------------------------------------------------------------
@@ -504,7 +481,7 @@ void loop() {
 
 // ★★★ T_CNT_PINの状態を更新する関数 ★★★
 void updateTCntPin() {
-  bool pumpRunning = pumpRunCommandActive;
+  bool pumpRunning = systemState.pumpRunCommandActive;
   bool uvRunning   = is_uv_running();
 
   bool hourOn = evaluateHourMeterCondition(
@@ -645,7 +622,7 @@ void sendRpmCommand(int rpm) {
 
   pump_write8(command, "RPM");
 
-  pumpRunCommandActive = true;
+  systemState.pumpRunCommandActive = true;
   lastRpmCommandMs = millis();
 }
 
@@ -675,7 +652,7 @@ void stopPump() {
   //====================================================
   // [追加] 停止命令＝運転指令を落とす
   //====================================================
-  pumpRunCommandActive = false;
+  systemState.pumpRunCommandActive = false;
   lastRpmCommandMs = 0;
   //--- 稼働ランプOFF ---
   digitalWrite(P_LAMP_PIN, LOW);

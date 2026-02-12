@@ -287,7 +287,11 @@ void handleUvSwitchInputs() {
       // persist.uv = 0;
       // savePersistState();
       // ★ EEPROMへ保存（新方式）
-      eepromSave(systemState);
+      PersistState ps;
+      ps.pump = (systemState.pumpState == STATE_RUNNING);
+      ps.uv   = (systemState.uvState == STATE_RUNNING);
+      savePersistState(ps);
+      // eepromSave(systemState);
       UV_DEBUG_PRINTLN("UV Stop Switch ON");
     }
 
@@ -339,7 +343,11 @@ void handleUvSwitchInputs() {
         // persist.uv = 1;
         // savePersistState();
         systemState.uvState = STATE_RUNNING;
-        eepromSave(systemState);
+        // eepromSave(systemState);
+        PersistState ps;
+        ps.pump = (systemState.pumpState == STATE_RUNNING);
+        ps.uv   = (systemState.uvState == STATE_RUNNING);
+        savePersistState(ps);
         return;
       }
 
@@ -347,11 +355,15 @@ void handleUvSwitchInputs() {
       // systemState.uvState = STATE_RUNNING;
       // persist.uv = 1;
       // savePersistState();
-// 起動条件OK：通常RUNNING
-systemState.uvState = STATE_RUNNING;
+      // 起動条件OK：通常RUNNING
+      systemState.uvState = STATE_RUNNING;
 
-// ★ EEPROMへ保存（新方式）
-eepromSave(systemState);
+      // ★ EEPROMへ保存（新方式）
+      // eepromSave(systemState);
+      PersistState ps;
+      ps.pump = (systemState.pumpState == STATE_RUNNING);
+      ps.uv   = (systemState.uvState == STATE_RUNNING);
+      savePersistState(ps);
 
       UV_DEBUG_PRINTLN("UV Start Switch ON");
       // ★即時に状態表示（10秒待たない）

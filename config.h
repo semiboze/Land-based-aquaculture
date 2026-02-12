@@ -1,3 +1,9 @@
+#pragma once
+
+//================================================
+// システム定数
+//================================================
+const int MAX_UV_LAMPS = 10;
 #ifndef CONFIG_H
 #define CONFIG_H
 
@@ -10,7 +16,7 @@ static const int T_CNT_PIN = 9;
 //====================================================
 // ファームウェア情報
 //====================================================
-static const char* const FIRMWARE_VERSION = "20260211_R4";
+static const char* const FIRMWARE_VERSION = "20260212_R1";
 
 //====================================================
 // ビルドスイッチ
@@ -185,12 +191,12 @@ const int UV_OUT_10_PIN     = 39; // UVランプ10基目のパイロットラン
 // const int LED_UV_RUN_PIN    = 47; // 操作盤の稼働灯(現在ハード未実装)
 
 // --- UV入力 ---
-static const int UV_IN_PINS[MAX_UV_LAMPS] = {
+static const int uvInPins[MAX_UV_LAMPS] = {
   UV_IN_1_PIN,UV_IN_2_PIN,UV_IN_3_PIN,UV_IN_4_PIN,UV_IN_5_PIN,UV_IN_6_PIN,UV_IN_7_PIN,UV_IN_8_PIN,UV_IN_9_PIN,UV_IN_10_PIN
 };
 
 // --- UV出力 ---
-static const int UV_OUT_PINS[MAX_UV_LAMPS] = {
+static const int uvOutPins[MAX_UV_LAMPS] = {
   UV_OUT_1_PIN,UV_OUT_2_PIN,UV_OUT_3_PIN,UV_OUT_4_PIN,UV_OUT_5_PIN,UV_OUT_6_PIN,UV_OUT_7_PIN,UV_OUT_8_PIN,UV_OUT_9_PIN,UV_OUT_10_PIN
 };
 
