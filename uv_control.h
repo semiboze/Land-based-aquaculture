@@ -13,4 +13,6 @@ void uv_loop_task();
 bool is_uv_running(); // ★★★ UVランプが稼働中か判定する関数を追加 ★★★
 void runStartupLedSequence(int lampCount); // ★★★ LEDの起動シーケンス関数を追加 ★★★
 void uv_force_restore(bool run);
+void uv_restore_after_powerfail();
+
 // #endif

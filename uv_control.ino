@@ -284,14 +284,11 @@ void handleUvSwitchInputs() {
 
     if (systemState.uvState == STATE_RUNNING) {
       systemState.uvState = STATE_STOPPED;
-      // persist.uv = 0;
-      // savePersistState();
       // ★ EEPROMへ保存（新方式）
       PersistState ps;
       ps.pump = (systemState.pumpState == STATE_RUNNING);
       ps.uv   = (systemState.uvState == STATE_RUNNING);
       savePersistState(ps);
-      // eepromSave(systemState);
       UV_DEBUG_PRINTLN("UV Stop Switch ON");
     }
 
@@ -330,7 +327,7 @@ void handleUvSwitchInputs() {
     if (systemState.uvState == STATE_STOPPED) {
 
       // 起動条件未達：UV本体は動かさないが、警告点滅はラッチ
-      if (!pumpStartupOk) {
+      if (!systemState.pumpStartupOk) {
         UV_DEBUG_PRINTLN("UV Start: CHECK (relay ON) - pump not ready");
 
         // ★配線チェック：リレーだけONにする
@@ -339,9 +336,7 @@ void handleUvSwitchInputs() {
         // ★未接続/断線も見たいので点滅ラッチON
         uvMissingBlinkActive = true;
         uvCheckStartMs = millis();   // ★追加  
-        // ★★★ ここを追加 ★★★
-        // persist.uv = 1;
-        // savePersistState();
+
         systemState.uvState = STATE_RUNNING;
         // eepromSave(systemState);
         PersistState ps;
@@ -350,11 +345,6 @@ void handleUvSwitchInputs() {
         savePersistState(ps);
         return;
       }
-
-      // 起動条件OK：通常RUNNING
-      // systemState.uvState = STATE_RUNNING;
-      // persist.uv = 1;
-      // savePersistState();
       // 起動条件OK：通常RUNNING
       systemState.uvState = STATE_RUNNING;
 
@@ -446,7 +436,12 @@ void uv_loop_task() {
   if (numActiveUvLamps == 0) {
     return;
   }
-  
+  if (!uvFaultCheckEnabled &&                         // UV断線警告が無効な場合
+    millis() - uvCheckStartMs > UV_FAULT_IGNORE_MS) { // 一定時間経過後に有効化
+
+    uvFaultCheckEnabled = true;                       // UV断線警告を有効化
+  }
+
   // loop内で実行していたUV関連の処理をここに記述
   handleUvSwitchInputs();
   updateUvSystemState();
@@ -507,8 +502,8 @@ void runStartupLedSequence(int lampCount) {
     "UV_LAMP_PIN      "
   };
   const int numStaticLEDs = sizeof(staticLEDs) / sizeof(staticLEDs[0]);
-  const int main_interval = 500;  // 固定LEDの点灯/消灯の間隔 (ミリ秒)
-  const int sweep_interval = 250;  // UVランプを流れるように点灯させる間隔 (ミリ秒)
+  const int main_interval = 250;  // 固定LEDの点灯/消灯の間隔 (ミリ秒)
+  const int sweep_interval = 100;  // UVランプを流れるように点灯させる間隔 (ミリ秒)
   const int Sequence_interval = 50; // シーケンス開始前の待機時間 (ミリ秒)
 
   // --- シーケンス開始 ---
@@ -525,7 +520,7 @@ void runStartupLedSequence(int lampCount) {
   if (lampCount > 0) {                                    // UVランプがある場合のみ実行
     for(int i = 0; i < lampCount; i++) {                  // UVランプ点灯     
       digitalWrite(uvOutPins[i], HIGH);                   // UVランプ点灯
-      delay(100);                              // 少し待つ            
+      delay(50);                              // 少し待つ            
       digitalWrite(uvOutPins[i], LOW);                    // UVランプ消灯      
     }
     delay(50);                                           // 全消灯後に少し間を空ける
@@ -533,11 +528,11 @@ void runStartupLedSequence(int lampCount) {
     // 3. 検出したUVランプを流れるように点灯と消灯
     for(int i = 0; i < lampCount; i++) {                  // UVランプ点灯    
       digitalWrite(uvOutPins[i], HIGH);                   // UVランプ点灯
-      delay(100);                              // 少し待つ              
+      delay(50);                              // 少し待つ              
     }
     for(int i = lampCount - 1; i >= 0; i--) {
       digitalWrite(uvOutPins[i], LOW);
-      delay(100);
+      delay(50);
     }
   }
   for(int i = 0; i < numStaticLEDs; i++) {                // 制御ランプ消灯
@@ -558,7 +553,7 @@ void runStartupLedSequence(int lampCount) {
       digitalWrite(uvOutPins[i], HIGH);
       delay(1);
     }
-    delay(250);
+    delay(50);
 
     for(int i = 0; i < numStaticLEDs; i++) { // 制御ランプ消灯
       digitalWrite(staticLEDs[i], LOW);
@@ -568,7 +563,7 @@ void runStartupLedSequence(int lampCount) {
       digitalWrite(uvOutPins[i], LOW);
       delay(1);
     }
-    delay(250);
+    delay(50);
   }
   UV_DEBUG_PRINTLN("LED self-check sequence complete.");
 }
@@ -614,18 +609,34 @@ static UvSense readUvSenseNoResistor(int pin) {
   return result;
 }
 void uv_force_restore(bool run) {
+
   if (run) {
+
     systemState.uvState = STATE_RUNNING;
-    uvFaultCheckEnabled = true;   // ★追加★
-    uvRunLampLatched = true;      // ★必須
+
+    // ★復帰時は断線チェックを即有効にしない
+    uvFaultCheckEnabled = false;
+
+    // ★猶予開始時刻をリセット
+    uvCheckStartMs = millis();
+
+    // ★ラッチを全解除
+    for (int i = 0; i < MAX_UV_LAMPS; i++) {
+      uvNgLatchUntilMs[i] = 0;
+    }
+
+    uvRunLampLatched = true;
     uvMissingBlinkActive = false;
     uvRelayForceOnForCheck = false;
+
   } else {
+
     systemState.uvState = STATE_STOPPED;
     uvRunLampLatched = false;
     uvRelayForceOnForCheck = false;
   }
 }
+
 
 //=========================================================
 // [改] DIP設定に応じたUV断線判定
@@ -653,4 +664,15 @@ static bool isUvFaultDetected() {
   // DIP_SW3 = OFF → 過半数
   int threshold = (half / 2) + 1;
   return (brokenA >= threshold || brokenB >= threshold);
+}
+void uv_restore_after_powerfail() {
+
+  uvCheckStartMs = millis();
+  uvFaultCheckEnabled = false;
+
+  for (int i = 0; i < MAX_UV_LAMPS; i++) {
+    uvNgLatchUntilMs[i] = 0;
+  }
+
+  uv_force_restore(true);
 }
