@@ -37,9 +37,9 @@ SystemState systemState;
 #include "general.h" // デバッグマクロ包含
 #include "uv_control.h"
 
-bool cfg_restoreUvAfterPowerFail = false;           // 停電復帰後にUVランプを自動再起動するかどうか
-bool cfg_uvFaultAnyOneNg         = false;           // UVランプ断線警告を「いずれか1本」でNG判定するかどうか
-bool cfg_uvAutoStart             = false;           // UVランプ自動起動設定
+// bool cfg_restoreUvAfterPowerFail = false;           // 停電復帰後にUVランプを自動再起動するかどうか
+// bool cfg_uvFaultAnyOneNg         = false;           // UVランプ断線警告を「いずれか1本」でNG判定するかどうか
+// bool cfg_uvAutoStart             = false;           // UVランプ自動起動設定
 static bool uvAutoStarted = false;                  // [DIP_SW7] UV自動起動用ラッチ
 
 // 最後にRPMコマンドを送った時刻（ウォッチドッグ用）
@@ -174,13 +174,8 @@ void setup() {
   dip_read();
 
   DEBUG_PRINT("DIP_SW1 restore UV = ");
-  DEBUG_PRINTLN(cfg_restoreUvAfterPowerFail ? "ON" : "OFF");
-  DEBUG_PRINT("DIP_SW2 hourMeterIncludeUv = ");
-  // DEBUG_PRINTLN(cfg_hourMeterIncludeUv ? "ON" : "OFF");
-  // [改善] CONFIRMは「確認できたら終わり」にする
-  // - 何回送るか固定にしない
-  // - 受信側(handleSerialCommunication)が inverter_confirmed=true にする設計と整合
-  //====================================================
+  DEBUG_PRINTLN(systemState.restoreUvAfterPowerFail ? "ON" : "OFF");
+
   inverter_confirmed = false;
 
   const unsigned long CONFIRM_TIMEOUT_MS = 800;  // 全体の待ち時間（好みで調整）
@@ -313,8 +308,9 @@ void setup() {
   // DEBUG_PRINTLN(restored ? "YES" : "NO");
 
   DEBUG_PRINT("[SETUP] apply systemState.pumpState=");
-
-  DEBUG_PRINT("[SETUP] apply uvState=");
+  DEBUG_PRINTLN(systemState.pumpState);
+  DEBUG_PRINT("[SETUP] apply systemState.uvState=");
+  DEBUG_PRINTLN(systemState.uvState);
 }
 
 // ----------------------------------------------------------------
@@ -350,7 +346,7 @@ void updateTCntPin() {
   digitalWrite(T_CNT_PIN, hourOn ? HIGH : LOW);
 #ifdef DEBUG_MODE
   static unsigned long lastPrint = 0;
-  if (millis() - lastPrint > 3000) {
+  if (millis() - lastPrint > 30000) {
     lastPrint = millis();
     DEBUG_PRINT("HourMode=");
     DEBUG_PRINT(systemState.hourMeterMode, BIN);
@@ -665,7 +661,7 @@ void updateSystemState() {
     //====================================================
 // [DIP_SW7] UV自動起動（ポンプ起動後）
 //====================================================
-if (cfg_uvAutoStart &&
+if (systemState.uvAutoStart &&
     systemState.pumpState == STATE_RUNNING &&
     !uvAutoStarted &&
     !is_uv_running()) {

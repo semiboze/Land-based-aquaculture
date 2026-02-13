@@ -621,7 +621,7 @@ static bool isUvFaultDetected() {
   }
 
   // DIP_SW3 = ON → 1本でもNG
-  if (cfg_uvFaultAnyOneNg) {
+  if (systemState.uvFaultAnyOneNg) {
     return (brokenA > 0 || brokenB > 0);
   }
 

@@ -25,6 +25,6 @@ void dip_read() {
   systemState.hourMeterMode = mode;
   systemState.uvFaultAnyOneNg = DIP_ON(DIP_SW6_PIN);
   systemState.uvAutoStart = DIP_ON(DIP_SW7_PIN);
-DEBUG_PRINT("systemState.hourMeterMode=");
-DEBUG_PRINTLN(systemState.hourMeterMode, BIN);
+  DEBUG_PRINT("systemState.hourMeterMode=");
+  DEBUG_PRINTLN(systemState.hourMeterMode, BIN);
 }
