@@ -5,9 +5,7 @@
 #include "eeprom_manager.h"
 #include "uv_control.h"
 
-// SystemStateStruct systemState;
 SystemState systemState;
-// const char* FirmwareVersion = "20260211_R4";
 /**
  * @file dynamic_rpm_pump_controller.ino
  * @brief 統合・改良版 ポンプ＆UVランプコントローラー (ハードウェア自動検知版)
@@ -51,13 +49,9 @@ int PUMP_CURRENT_THRESHOLD      = PUMP_CURRENT_THRESHOLD_DEFAULT;  // ポンプ�
 enum varControlMode { MODE_VOLUME, MODE_FIXED };  // 可変抵抗モード / 固定値モード
 varControlMode rpmControlMode;                    // 回転数可変モード
 varControlMode currThresholdCntMode;              // [変更点] 電流しきい値可変モード
-// ★追加：CONFIRM応答が取れたかどうか
 volatile bool inverter_confirmed = false;         // インバーターからのCONFIRM応答受信フラグ
 
 unsigned long pumpStartTime = 0;                  // ポンプ起動時刻
-// ★追加★ ポンプ起動時の電流監視用 変数 2025-12-09
-// bool pumpStartupOk        = false;   // 一度でもしきい値以上の電流を検出したら true
-// bool pumpStartupError     = false;   // 「低電流エラー」で停止したら true
 int  maxCurrentSinceStart = 0;       // 起動開始から今までの最大電流(ADC値)
 
 volatile bool processFlag = false;              // タイマー割り込みで立てる処理フラグ
@@ -101,10 +95,8 @@ int calculateRpmFromVolume();     // 可変抵抗から回転数を計算
 void sendRpmCommand(int rpm);     // 回転数コマンド送信 2026-01-08 変更
 void updateCurrentThreshold();    // しきい値を更新する関数のプロトタイプ宣言
 void updateTCntPin();             // ★★★ T_CNT_PINを制御する関数のプロトタイプ宣言 ★★★
-//void runStartupLedSequence(int);  // 起動時のLEDシーケンス
 void resetUvHourMeter();          // ★追加★ UVアワーメーターリセット関数プロトタイプ 2025年12月11日
 void both_stop_check_task();      // ★追加★★ 両方停止出力ピンの制御タスクプロトタイプ 2025年12月11日
-// ★追加：可変長送信（8/9共通）
 void pump_write(const uint8_t* cmd, uint8_t len, const char* label);
 static bool evaluateHourMeterCondition(uint8_t modeBits,
                                        bool pumpRunning,
@@ -116,19 +108,6 @@ static bool evaluateHourMeterCondition(uint8_t modeBits,
 // Serial1 : ポンプ通信用（Mega: TX1=D18, RX1=D19）
 //====================================================
 #define PUMP_SERIAL   Serial1
-//====================================================
-// [ファン制御] ここだけ見ればON/OFFが分かるようにする
-// もし「LOWで回る」なら FAN_ACTIVE_LOW を 1 にする
-//====================================================
-// 1: LOWでON（アクティブLOW） / 0: HIGHでON（アクティブHIGH）
-#define FAN_ACTIVE_LOW  0
-// #if FAN_ACTIVE_LOW
-//   const uint8_t FAN_ON_LEVEL  = LOW;
-//   const uint8_t FAN_OFF_LEVEL = HIGH;
-// #else
-//   const uint8_t FAN_ON_LEVEL  = HIGH;
-//   const uint8_t FAN_OFF_LEVEL = LOW;
-// #endif
 
 inline void fan_on()  { digitalWrite(FAN_CTRL_PIN, FAN_ON_LEVEL);  }
 inline void fan_off() { digitalWrite(FAN_CTRL_PIN, FAN_OFF_LEVEL); }
@@ -284,7 +263,7 @@ void setup() {
   digitalWrite(FAN_CTRL_PIN, FAN_OFF_LEVEL);  // ★ 起動時は必ずOFF
 
   DEBUG_PRINT("Firmware: ");
-  DEBUG_PRINT(FirmwareVersion);
+  DEBUG_PRINTLN(FirmwareVersion);
   if (rpmControlMode == MODE_VOLUME) {
     PU_DEBUG_PRINTLN(" (RPM Control: Volume)");
   } else {
@@ -619,8 +598,7 @@ void handleSwitchInputs() {
 // [追加] 非常停止ランプ（EM）統合制御
 //====================================================
 static void updateEmLamp() {
-  // ポンプ起動失敗 / 過電流 / UV片側過半数断線
-  if (systemState.pumpStartupError || uvHalfBrokenWarning) {
+  if (systemState.pumpStartupError || systemState.uvHalfBrokenWarning) {
     digitalWrite(EM_LAMP_PIN, HIGH);
   } else {
     digitalWrite(EM_LAMP_PIN, LOW);
@@ -651,13 +629,13 @@ void updateSystemState() {
       // [試運転] 止めない・警告ランプも点灯しない
       //====================================================
       // ただし「起動失敗フラグ」は残す（ログや表示で分かるように）
-      digitalWrite(EM_LAMP_PIN, LOW);
+      // digitalWrite(EM_LAMP_PIN, LOW);
 #else
       //====================================================
       // [通常] 安全停止 + 警告
       //====================================================
       stopPump();
-      digitalWrite(EM_LAMP_PIN, HIGH);
+      // digitalWrite(EM_LAMP_PIN, HIGH);
 #endif
     }
 
@@ -674,13 +652,13 @@ void updateSystemState() {
       //====================================================
       // [試運転] 止めない・警告しない（ログだけ残す）
       //====================================================
-      digitalWrite(EM_LAMP_PIN, LOW);
+      // digitalWrite(EM_LAMP_PIN, LOW);
 #else
       //====================================================
       // [通常] 安全停止 + 警告
       //====================================================
       stopPump();
-      digitalWrite(EM_LAMP_PIN, HIGH);
+      // digitalWrite(EM_LAMP_PIN, HIGH);
 #endif
     }
 
@@ -834,7 +812,7 @@ void handleSerialCommunication() {
 
 #if FORCE_RUN_NO_STOP
             // [試運転] エラーが来ても警告ランプを上げない
-            digitalWrite(EM_LAMP_PIN, LOW);
+            // digitalWrite(EM_LAMP_PIN, LOW);
 #endif
          }
       }

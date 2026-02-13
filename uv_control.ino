@@ -43,7 +43,7 @@ static unsigned long uvCheckStartMs = 0;  // 点滅チェック開始時刻
 //  - false = OK
 //=========================================================
 static bool uvBroken[MAX_UV_LAMPS] = {false};
-/* static */ bool uvHalfBrokenWarning = false;         // ★追加★ UVランプの一部断線警告フラグ
+// /* static */ bool uvHalfBrokenWarning = false;         // ★追加★ UVランプの一部断線警告フラグ
 
 // UV断線チェックを有効にするかどうか
 static bool uvFaultCheckEnabled = false;
@@ -66,43 +66,6 @@ enum UvSense {
 // 判定関数（実体は後ろでもOK）
 static UvSense readUvSenseNoResistor(int pin);
 
-// ▼▼▼ UV機能定義 ▼▼▼
-// const int UV_SW_START_PIN   = 5 , UV_SW_STOP_PIN        = 6;
-// const int UV_LAMP_PIN       = 7; // ★★★ T_CNT_PINの定義を削除 ★★★
-// const int UV_IN_1_PIN       = 20; // UVランプ1基目の断線警告ピン
-// const int UV_IN_2_PIN       = 21; // UVランプ2基目の断線警告ピン
-// const int UV_IN_3_PIN       = 22; // UVランプ3基目の断線警告ピン
-// const int UV_IN_4_PIN       = 23; // UVランプ4基目の断線警告ピン
-// const int UV_IN_5_PIN       = 24; // UVランプ5基目の断線警告ピン
-// const int UV_IN_6_PIN       = 25; // UVランプ6基目の断線警告ピン
-// const int UV_IN_7_PIN       = 26; // UVランプ7基目の断線警告ピン
-// const int UV_IN_8_PIN       = 27; // UVランプ8基目の断線警告ピン
-// const int UV_IN_9_PIN       = 28; // UVランプ9基目の断線警告ピン
-// const int UV_IN_10_PIN      = 29; // UVランプ10基目の断線警告ピン
-
-// const int UV_OUT_1_PIN      = 30; // UVランプ1基目のパイロットランプ出力ピン
-// const int UV_OUT_2_PIN      = 31; // UVランプ2基目のパイロットランプ出力ピン
-// const int UV_OUT_3_PIN      = 32; // UVランプ3基目のパイロットランプ出力ピン
-// const int UV_OUT_4_PIN      = 33; // UVランプ4基目のパイロットランプ出力ピン
-// const int UV_OUT_5_PIN      = 34; // UVランプ5基目のパイロットランプ出力ピン
-// const int UV_OUT_6_PIN      = 35; // UVランプ6基目のパイロットランプ出力ピン
-// const int UV_OUT_7_PIN      = 36; // UVランプ7基目のパイロットランプ出力ピン
-// const int UV_OUT_8_PIN      = 37; // UVランプ8基目のパイロットランプ出力ピン
-// const int UV_OUT_9_PIN      = 38; // UVランプ9基目のパイロットランプ出力ピン
-// const int UV_OUT_10_PIN     = 39; // UVランプ10基目のパイロットランプ出力ピン
-// const int UV_GROUP_A_PIN    = 40; // UVランプグループA制御ピン
-// const int UV_GROUP_B_PIN    = 41; // UVランプグループB制御ピン
-// const int LED_UV_RUN_PIN    = 47; // 操作盤の稼働灯(現在ハード未実装)
-
-// 対応する可能性のある最大ランプ数でピン配列を定義しておく
-// const int uvInPins[MAX_UV_LAMPS] = {
-//   UV_IN_1_PIN, UV_IN_2_PIN, UV_IN_3_PIN, UV_IN_4_PIN, UV_IN_5_PIN,
-//   UV_IN_6_PIN, UV_IN_7_PIN, UV_IN_8_PIN, UV_IN_9_PIN, UV_IN_10_PIN
-// };
-// const int uvOutPins[MAX_UV_LAMPS] = {
-//   UV_OUT_1_PIN, UV_OUT_2_PIN, UV_OUT_3_PIN, UV_OUT_4_PIN, UV_OUT_5_PIN,
-//   UV_OUT_6_PIN, UV_OUT_7_PIN, UV_OUT_8_PIN, UV_OUT_9_PIN, UV_OUT_10_PIN
-// };
 //=========================================================
 // [追加] NGラッチ（接触不良の瞬断を見逃さない）
 //  - NGを検出したら一定時間点滅を維持する
@@ -137,10 +100,6 @@ static inline bool isUvSignalOk(int pin) {
   // 既存の enum UvSense と判定関数を使う（ファイル内に既に宣言済み）
   // UvSense s = readUvSenseNoResistor(pin);2026-01-22
   return (digitalRead(pin) == HIGH);
-
-  // OK（外部がHIGHを駆動）だけ true
-  // BROKEN(外部LOW駆動) / FLOATING(未接続) は false → 点滅側へ
-  // return (s == UV_SENSE_OK);
 }
 // UV入力ピンの pinMode を返す
 static inline uint8_t getUvInputPinMode() {
@@ -447,19 +406,24 @@ void uv_loop_task() {
   updateUvSystemState();
   checkUvLampConnection();
   //====================================================
-  // UV断線警告更新（起動直後は無効化）
+  // UV断線警告更新
+  // 条件：UVがRUNNING中のみ監視
   //====================================================
-  if (uvFaultCheckEnabled) {
-    // ★起動猶予中は断線警告を出さない
+  if (!is_uv_running()) {
+    // UV停止中は断線警告を出さない
+    systemState.uvHalfBrokenWarning = false;
+  }
+  else if (uvFaultCheckEnabled) {
+    // 起動猶予時間内は警告しない
     if (millis() - uvCheckStartMs < UV_FAULT_IGNORE_MS) {
-      uvHalfBrokenWarning = false;
+      systemState.uvHalfBrokenWarning = false;
     }
     else {
-      uvHalfBrokenWarning = isUvFaultDetected();
+      systemState.uvHalfBrokenWarning = isUvFaultDetected();
     }
-
-  } else {
-    uvHalfBrokenWarning = false;
+  }
+  else {
+    systemState.uvHalfBrokenWarning = false;
   }
 }
 

@@ -14,15 +14,22 @@ const int MAX_UV_LAMPS = 10;                      // UVランプ最大本数
 // ビルドスイッチ
 //====================================================
 #define DEBUG_MODE
-#define UV_DEBUG_MODE                               // UVコントロールデバッグモード
-#define PU_DEBUG_MODE                               // ポンプ通信用デバッグモード                 
+// #define UV_DEBUG_MODE                               // UVコントロールデバッグモード
+// #define PU_DEBUG_MODE                               // ポンプ通信用デバッグモード                 
 
 static const int T_CNT_PIN = 9;                     // ★★★ T_CNT_PINの定義を追加 ★★★              
 
 //====================================================
 // ファームウェア情報
 //====================================================
-static const char* const FirmwareVersion = "20260213_R3";
+static const char* const FirmwareVersion = "20260213_R4";
+
+//====================================================
+// [ファン制御] ここだけ見ればON/OFFが分かるようにする
+// もし「LOWで回る」なら FAN_ACTIVE_LOW を 1 にする
+//====================================================
+// 1: LOWでON（アクティブLOW） / 0: HIGHでON（アクティブHIGH）
+#define FAN_ACTIVE_LOW  0
 
 //====================================================
 // 電流シミュレーション
