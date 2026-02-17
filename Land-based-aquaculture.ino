@@ -334,16 +334,17 @@ void loop() {
 
 // ★★★ T_CNT_PINの状態を更新する関数 ★★★
 void updateTCntPin() {
-  bool pumpRunning = systemState.pumpRunCommandActive;
-  bool uvRunning   = is_uv_running();
+  // bool pumpRunning = systemState.pumpRunCommandActive;
+  bool pumpRunning = (systemState.pumpState == STATE_RUNNING); // ここは「ポンプが実際に動いているか」を見たいので、コマンド状態ではなく実際の状態を参照するように変更
+  bool uvRunning   = is_uv_running();               // UVランプが実際に動いているかどうかを判定する関数（uv_control.hで定義）
 
-  bool hourOn = evaluateHourMeterCondition(
-                  systemState.hourMeterMode,
-                  pumpRunning,
-                  uvRunning
+  bool hourOn = evaluateHourMeterCondition(         // アワーメーターのON/OFFを判定する関数
+                  systemState.hourMeterMode,        // モードビット
+                  pumpRunning,                      // ポンプが動いているか
+                  uvRunning                         // UVランプが動いているか
                 );
 
-  digitalWrite(T_CNT_PIN, hourOn ? HIGH : LOW);
+  digitalWrite(T_CNT_PIN, hourOn ? HIGH : LOW);     // アワーメーターがONのときHIGH、OFFのときLOW
 #ifdef DEBUG_MODE
   static unsigned long lastPrint = 0;
   if (millis() - lastPrint > 30000) {
