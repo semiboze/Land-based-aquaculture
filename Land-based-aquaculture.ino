@@ -267,16 +267,35 @@ void setup() {
 
   if (restored) {                               // 復旧データがある場合のみ復旧処理を行う
     if (systemState.restoreUvAfterPowerFail) {  // DIPスイッチで復旧を許可している場合のみ復旧処理を行う
-      if (ps.pump == 1) {                       // ポンプ復旧
-        systemState.pumpState = STATE_RUNNING;  // 状態をRUNNINGにセット
-        systemState.pumpStartTime = millis();               // 起動時刻を記録
-        systemState.pumpStartupOk = false;      // 起動成功フラグは一旦リセット
-        systemState.pumpStartupError = false;   // 起動コマンドを送るのはループ内のロジックに任せる（起動条件が整うまで送らない）
-        startupMonitor_begin();                 // 起動監視開始
-        rpm_value = getTargetRpm();             // 目標回転数を取得
-        sendRpmCommand(rpm_value);              // ★追加★ 起動コマンドを送るのはループ内のロジックに任せる（起動条件が整うまで送らない）
-        DEBUG_PRINTLN("Pump restored.");        // ★起動コマンドはループ内のロジックに任せる
+      if (ps.pump == 1) {                                     // ポンプ復旧
+        DEBUG_PRINTLN("Pump restoring sequence...");          // ★追加★ 復旧させるのは状態だけ。実際の起動コマンドはループ内のロジックに任せる（起動条件が整うまで送らない）
+        //====================================================
+        // ① インバータ再同期
+        //====================================================
+        inverter_confirmed = false;                           // ★重要★ ここでフラグをリセットしておく。これによりループ内のロジックで再度確認コマンドを送るようになる（起動条件が整うまで送らない）
+        sendConfirmCommand();                                 // ★追加★ 確認コマンドを送る（仕様書要求）これも復旧処理の一環として行う。これによりインバータと再同期する。応答処理は後述の受信側でconfirmedにする
+        unsigned long confirmStart = millis();                // 確認コマンド送信後の待ち時間開始
+        while (!inverter_confirmed && millis() - confirmStart < 500) {// 最大500ms待つ（好みで調整）応答処理は後述の受信側でconfirmedにする
+          handleSerialCommunication();                        // 受信処理を回してACKを拾う（ここが重要）
+        }
+        if (!inverter_confirmed) {                            // 確認できなかった場合は警告を出す（復旧処理は続行するが、ユーザーに注意を促す）
+          DEBUG_PRINTLN("Confirm failed on restore.");        // ★追加★ 確認できなかった場合は警告を出す（復旧処理は続行するが、ユーザーに注意を促す）
+        }
+        delay(50); // 応答安定待ち
+        //====================================================
+        // ② 状態復帰
+        //====================================================
+        systemState.pumpState = STATE_RUNNING;                // 状態だけ復旧させる。実際の起動コマンドはループ内のロジックに任せる（起動条件が整うまで送らない）
+        systemState.pumpStartTime = millis();                 // ここで起動時刻をリセットしておく。これによりループ内のロジックで起動条件が整うまでコマンドを送らないようになる
+        startupMonitor_begin();                               // ★追加★ 起動監視も開始しておく。これによりループ内のロジックで起動条件が整うまでコマンドを送らないようになる
+        //====================================================
+        // ③ 固定RPMで再始動（安全）
+        //====================================================
+        rpm_value = NORMAL_MAX_RPM;                           // ★追加★ 復旧時は安全のため固定回転数で始動させる。これにより可変抵抗の位置に関わらず安全な回転数で復旧できる
+        sendRpmCommand(rpm_value);                            // ★追加★ 回転数コマンドを送る（復旧処理の一環として行う。これによりインバータを安全な回転数で再始動させる）
+        DEBUG_PRINTLN("Pump restore command sent.");          // ★追加★ 復旧処理の一環としてコマンドを送る。これによりインバータを安全な回転数で再始動させる
       }
+
       if (ps.uv == 1) {                         // UVランプ復旧
         DEBUG_PRINTLN("UV restored.");          // ★追加★ 復旧させるのは状態だけ。実際の起動コマンドはループ内のロジックに任せる（起動条件が整うまで送らない）
         uv_restore_after_powerfail();           // ★追加★ UVランプの復旧処理（状態だけ復旧させる。実際の起動コマンドはループ内のロジックに任せる）
@@ -307,10 +326,10 @@ void setup() {
 // loop() - メインループ
 // ----------------------------------------------------------------
 void loop() {
-  uv_loop_task();               // 最初 UV機能のループ処理を呼び出す
-  updateSystemState();          // ２番目 ポンプの状態更新
-  handleSwitchInputs();         // ３番目 スイッチ入力処理
-  updateCurrentThreshold();     // ４番目 [変更点] 毎ループ、可変抵抗の値を読み込んでしきい値を更新
+  handleSwitchInputs();         // 1番目 スイッチ入力処理
+  uv_loop_task();               // 2番め UV機能のループ処理を呼び出す
+  updateSystemState();          // 3番目 ポンプの状態更新
+  updateCurrentThreshold();     // 4番目 [変更点] 毎ループ、可変抵抗の値を読み込んでしきい値を更新
   updateTCntPin();              // ★★★ T_CNT_PINの状態を更新 ★★★
   // debugPrintDipSwitches(); // デバッグ用：DIPスイッチの状態をシリアル出力
   updateDisplays();             // 3桁表示のため、1000以上は999として表示
@@ -1037,7 +1056,7 @@ void measurePeakCurrent() {
  * @details 最高速度でのみ2秒間の保持時間を設けた修正版。
  */
 int getTargetRpm() {
-#if defined(PRIMING_TEST)                                 // テスト用：常にサインカーブで変化させる
+#if defined(PRIMING_TEST)                                 //
   // ポンプが運転中で、かつ起動後プライミング時間内の場合にシーケンスを実行
   if (systemState.pumpState == STATE_RUNNING) {
     unsigned long elapsedTimeMillis = millis() - systemState.pumpStartTime;
