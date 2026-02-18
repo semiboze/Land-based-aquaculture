@@ -96,7 +96,7 @@ static inline int uvGroupSize() {
 //  - 方法：プルアップ無し/有りで2回読んで「浮き」を推定
 //=========================================================
 static inline bool isUvSignalOk(int pin) {
-  return false; // ★一時的に全てNG扱いにする（配線確認用）
+  // return false; // ★一時的に全てNG扱いにする（配線確認用）
   UvSense s = readUvSenseNoResistor(pin);
 
   if (s == UV_SENSE_OK) {
