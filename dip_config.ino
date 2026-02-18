@@ -13,31 +13,20 @@ void dip_setup() {
   pinMode(DIP_SW7_PIN, INPUT_PULLUP);
 }
 
-// void dip_read() {
-
-//   systemState.restoreUvAfterPowerFail = DIP_ON(DIP_SW1_PIN);// DIPスイッチ1: 停電復帰後のUVランプ自動再起動設定
-
-//   uint8_t mode = 0;
-//   if (DIP_ON(DIP_SW2_PIN)) mode |= 0b100;
-//   if (DIP_ON(DIP_SW3_PIN)) mode |= 0b010;
-//   if (DIP_ON(DIP_SW4_PIN)) mode |= 0b001;
-
-//   systemState.hourMeterMode = mode;
-//   systemState.uvFaultAnyOneNg = DIP_ON(DIP_SW6_PIN);
-//   systemState.uvAutoStart = DIP_ON(DIP_SW7_PIN);
-//   DEBUG_PRINT("systemState.hourMeterMode=");
-//   DEBUG_PRINTLN(systemState.hourMeterMode, BIN);
-// }
 void dip_read() {
 
-  // =========================================================
+  //====================================================
   // SW1: 停電復帰設定
-  // 仕様変更:
-  //   OFF = 停電前状態で復帰（デフォルト）
-  //   ON  = 復帰しない
-  // =========================================================
-  systemState.restoreUvAfterPowerFail = !DIP_ON(DIP_SW1_PIN);
-
+  //  0 (未実装/スイッチOFF) = 復帰する（デフォルト）
+  //  1 (ON)                = 復帰しない
+  //====================================================
+  bool sw1 = DIP_ON(DIP_SW1_PIN);
+  // 未実装（常にLOW）も復帰扱いにする
+  if (sw1 == false) {
+    systemState.restoreUvAfterPowerFail = true;   // 復帰する
+  } else {
+    systemState.restoreUvAfterPowerFail = false;  // 復帰しない
+  }
 
   // =========================================================
   // SW2,3,4: アワーメーター動作モード

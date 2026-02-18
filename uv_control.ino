@@ -96,11 +96,17 @@ static inline int uvGroupSize() {
 //  - 方法：プルアップ無し/有りで2回読んで「浮き」を推定
 //=========================================================
 static inline bool isUvSignalOk(int pin) {
+  return false; // ★一時的に全てNG扱いにする（配線確認用）
+  UvSense s = readUvSenseNoResistor(pin);
 
-  // 既存の enum UvSense と判定関数を使う（ファイル内に既に宣言済み）
-  // UvSense s = readUvSenseNoResistor(pin);2026-01-22
-  return (digitalRead(pin) == HIGH);
+  if (s == UV_SENSE_OK) {
+    return true;
+  }
+
+  // 浮きもNG扱いにする
+  return false;
 }
+
 // UV入力ピンの pinMode を返す
 static inline uint8_t getUvInputPinMode() {
 #if UV_IN_USE_INTERNAL_PULLUP
@@ -138,9 +144,9 @@ static void driveUvIndicator(int idx, bool okNow) {
 // UVランプ接続チェック関数
 void checkUvLampConnection() {
   // ★ガード★ UVが有効でないときは何もしない
-  if (!uvFaultCheckEnabled) {
-    return;
-  }
+  // if (!uvFaultCheckEnabled) {
+  //   return;
+  // }
 
   // ★★★ 起動直後の断線判定猶予 ★★★
   if (millis() - uvCheckStartMs < UV_FAULT_IGNORE_MS) {
@@ -181,6 +187,7 @@ void checkUvLampConnection() {
     //=========================================================
     if (systemState.uvState == STATE_RUNNING) {
       bool ok = isUvSignalOk(uvInPins[i]);
+      uvBroken[i] = !ok;      // ★★★ これを追加 ★★★
       driveUvIndicator(i, ok);
       continue;
     }
@@ -387,18 +394,24 @@ void uv_setup(int detected_lamp_count) {
   pinMode(UV_GROUP_B_PIN, OUTPUT);
   digitalWrite(UV_GROUP_A_PIN, RELAY_OFF);
   digitalWrite(UV_GROUP_B_PIN, RELAY_OFF);
+  uvMissingBlinkActive = false;                 // ★追加★ 起動時は「未接続点滅」はしない
+  uvRelayForceOnForCheck = false;               // ★追加★ 起動時は配線チェックの強制ONもしない  
+  uvRunLampLatched = false;                     // ★追加★ 起動時は運転ランプの点灯もラッチしない
+  uvFaultCheckEnabled = false;                  // ★追加★ 起動時は断線チェックも有効にしない（起動条件が整ってから有効にする）
 }
 
 void uv_loop_task() {
   // ▼▼▼ ガード節 ▼▼▼
   // ランプ数が0なら、ループ処理をすべてスキップする
   if (numActiveUvLamps == 0) {
-    return;
+    // return;
   }
-  if (!uvFaultCheckEnabled &&                         // UV断線警告が無効な場合
-    millis() - uvCheckStartMs > UV_FAULT_IGNORE_MS) { // 一定時間経過後に有効化
-
-    uvFaultCheckEnabled = true;                       // UV断線警告を有効化
+  if (systemState.uvState == STATE_RUNNING) {
+    if (!uvFaultCheckEnabled && millis() - uvCheckStartMs > UV_FAULT_IGNORE_MS) {
+      uvFaultCheckEnabled = true;
+    }
+  } else {
+    uvFaultCheckEnabled = false;
   }
 
   // loop内で実行していたUV関連の処理をここに記述
@@ -428,8 +441,9 @@ void uv_loop_task() {
 }
 
 bool is_uv_running() {
-  if (numActiveUvLamps == 0) {
-    return false;
+  // ランプ未実装でもRUNNING状態ならtrue
+  if (systemState.uvState == STATE_RUNNING) {
+    return true;
   }
 
   // ★リレーON中も「運転扱い」にする
@@ -605,10 +619,38 @@ void uv_force_restore(bool run) {
 //=========================================================
 // [改] DIP設定に応じたUV断線判定
 //=========================================================
+//=========================================================
+// [改] DIP設定に応じたUV断線判定（0本/1本機種対応版）
+//=========================================================
 static bool isUvFaultDetected() {
 
-  int half = uvGroupSize();
-  if (half == 0) return false;
+  //=================================================
+  // ■ 0本機種
+  //=================================================
+  if (numActiveUvLamps == 0) {
+
+    // UVがRUNNING状態なら異常扱い
+    if (systemState.uvState == STATE_RUNNING) {
+      return true;
+    }
+    return false;
+  }
+
+  //=================================================
+  // ■ 1本機種
+  //=================================================
+  if (numActiveUvLamps == 1) {
+
+    if (!isUvSignalOk(uvInPins[0])) {
+      return true;
+    }
+    return false;
+  }
+
+  //=================================================
+  // ■ 2本以上（従来ロジック）
+  //=================================================
+  int half = numActiveUvLamps / 2;
 
   int brokenA = 0;
   int brokenB = 0;
@@ -616,23 +658,25 @@ static bool isUvFaultDetected() {
   for (int i = 0; i < half; i++) {
     if (!isUvSignalOk(uvInPins[i])) brokenA++;
   }
+
   for (int i = half; i < numActiveUvLamps; i++) {
     if (!isUvSignalOk(uvInPins[i])) brokenB++;
   }
 
-  // DIP_SW3 = ON → 1本でもNG
+  // DIP_SW6 = ON → 1本でもNG
   if (systemState.uvFaultAnyOneNg) {
     return (brokenA > 0 || brokenB > 0);
   }
 
-  // DIP_SW3 = OFF → 過半数
+  // DIP_SW6 = OFF → 過半数
   int threshold = (half / 2) + 1;
   return (brokenA >= threshold || brokenB >= threshold);
 }
+
 void uv_restore_after_powerfail() {
 
   uvCheckStartMs = millis();
-  uvFaultCheckEnabled = false;
+  uvFaultCheckEnabled = true;
 
   for (int i = 0; i < MAX_UV_LAMPS; i++) {
     uvNgLatchUntilMs[i] = 0;

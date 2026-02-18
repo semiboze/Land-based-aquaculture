@@ -10,7 +10,7 @@ static int baselineCount = 0;
 static int baselineAvg = 0;
 static int riseConsecutive = 0;
 
-void startupMonitor_reset()
+void startupMonitor_reset() // 起動モニタの状態をリセットする関数
 {
   phase = STARTUP_IDLE;
   startupPeakCount = 0;
@@ -21,13 +21,13 @@ void startupMonitor_reset()
   riseConsecutive = 0;
 }
 
-void startupMonitor_begin()
+void startupMonitor_begin()   // 起動モニタを開始する関数（初期化と同時に状態をリセット）
 {
   startupMonitor_reset();
   phase = STARTUP_INRUSH_IGNORE;
 }
 
-void startupMonitor_update(int currentPeak)
+void startupMonitor_update(int currentPeak)   // 起動モニタの状態を更新する関数（ピーク電流値を渡す）
 {
   if (phase == STARTUP_IDLE ||
       phase == STARTUP_DONE_OK ||
@@ -86,17 +86,17 @@ void startupMonitor_update(int currentPeak)
   }
 }
 
-bool startupMonitor_isOk()
+bool startupMonitor_isOk()        // 起動モニタがOK状態かどうかを返す関数
 {
   return phase == STARTUP_DONE_OK;
 }
 
-bool startupMonitor_isNg()
+bool startupMonitor_isNg()        // 起動モニタがNG状態かどうかを返す関数
 {
   return phase == STARTUP_DONE_NG;
 }
 
-StartupPhase startupMonitor_getPhase()
+StartupPhase startupMonitor_getPhase()  // 起動モニタの現在のフェーズを返す関数
 {
   return phase;
 }

@@ -22,7 +22,7 @@ static const int T_CNT_PIN = 9;                     // ★★★ T_CNT_PINの定
 //====================================================
 // ファームウェア情報
 //====================================================
-static const char* const FirmwareVersion = "20260217_R2";
+static const char* const FirmwareVersion = "20260218_R1";
 
 //====================================================
 // [ファン制御] ここだけ見ればON/OFFが分かるようにする
@@ -122,7 +122,7 @@ static const int P_SW_STOP_PIN  = 3;              // ポンプ運転開始・停
 static const int P_LAMP_PIN        = 4;           // ポンプ運転ランプ接続ピン
 static const int EM_LAMP_PIN       = 8;           // 非常停止ランプ (EM_LAMP_PIN) 接続ピン
 static const int LED_PUMP_RUN_PIN  = 45;          // 操作盤の稼働灯
-static const int LED_PUMP_STOP_PIN = 46;          // 操作盤の稼働灯・停止灯 現在ハード未実装
+// static const int LED_PUMP_STOP_PIN = 46;          // 操作盤の稼働灯・停止灯 現在ハード未実装
 static const int LED_ISR_PIN       = LED_BUILTIN; // 内蔵LED
 static const int LED_SERIAL_RX_PIN = 50;          // シリアル受信インジケータLEDピン
 

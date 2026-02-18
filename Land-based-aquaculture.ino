@@ -37,9 +37,6 @@ SystemState systemState;
 #include "general.h" // デバッグマクロ包含
 #include "uv_control.h"
 
-// bool cfg_restoreUvAfterPowerFail = false;           // 停電復帰後にUVランプを自動再起動するかどうか
-// bool cfg_uvFaultAnyOneNg         = false;           // UVランプ断線警告を「いずれか1本」でNG判定するかどうか
-// bool cfg_uvAutoStart             = false;           // UVランプ自動起動設定
 static bool uvAutoStarted = false;                  // [DIP_SW7] UV自動起動用ラッチ
 
 // 最後にRPMコマンドを送った時刻（ウォッチドッグ用）
@@ -51,7 +48,7 @@ varControlMode rpmControlMode;                    // 回転数可変モード
 varControlMode currThresholdCntMode;              // [変更点] 電流しきい値可変モード
 volatile bool inverter_confirmed = false;         // インバーターからのCONFIRM応答受信フラグ
 
-unsigned long pumpStartTime = 0;                  // ポンプ起動時刻
+// unsigned long pumpStartTime = 0;                  // ポンプ起動時刻
 int  maxCurrentSinceStart = 0;       // 起動開始から今までの最大電流(ADC値)
 
 volatile bool processFlag = false;              // タイマー割り込みで立てる処理フラグ
@@ -111,21 +108,6 @@ static bool evaluateHourMeterCondition(uint8_t modeBits,
 
 inline void fan_on()  { digitalWrite(FAN_CTRL_PIN, FAN_ON_LEVEL);  }
 inline void fan_off() { digitalWrite(FAN_CTRL_PIN, FAN_OFF_LEVEL); }
-
-//====================================================
-// [起動吸引判定] 突入無視→ベースライン学習→2次上昇待ち
-//====================================================
-
-// 1.5秒ピーク確定が1回/1.5sなので、
-//   例：INRUSH 4回 = 約6秒
-//       ベースライン学習 8回 = 約12秒
-//       上昇待ち 80回 = 約120秒
-#define INRUSH_IGNORE_PEAKS      4     // 突入として無視するピーク回数
-#define BASELINE_LEARN_PEAKS     8     // 空回り基準を学習するピーク回数
-#define RISE_WAIT_PEAKS_MAX      80    // 2次上昇を待つ最大ピーク回数（=約120秒）
-
-#define RISE_DELTA               8     // ベースラインから何カウント上がれば「上昇」とみなすか
-#define RISE_CONSECUTIVE         3     // 連続何回上昇したら「成功」と確定するか
 
 #if defined(DEBUG_MODE) || defined(UV_DEBUG_MODE) || defined(PU_DEBUG_MODE)
 //====================================================
@@ -270,35 +252,43 @@ void setup() {
   uv_setup(detectedLamps); 
   
   initializeDisplays();
+  runStartupLedSequence(detectedLamps); // LEDの起動シーケンスを実行
+
   //====================================================
   // EEPROM 復旧処理
   //====================================================
   PersistState ps;
   bool restored = loadPersistState(ps);
+  DEBUG_PRINT("2026/02/18 EEPROM pump=");
+  DEBUG_PRINTLN(ps.pump);
 
   DEBUG_PRINT("EEPROM restored=");
   DEBUG_PRINTLN(restored ? "YES" : "NO");
 
-  if (restored) {
-    if (ps.pump == 1) {
-      systemState.pumpState = STATE_RUNNING;
-      pumpStartTime = millis();
-      systemState.pumpStartupOk = false;
-      systemState.pumpStartupError = false;
-      // ★★★ これを追加 ★★★
-      startupMonitor_begin();
-      rpm_value = getTargetRpm();
-      sendRpmCommand(rpm_value);
-    }
-    if (ps.uv == 1 && systemState.restoreUvAfterPowerFail) {
-      DEBUG_PRINTLN("UV restoring...");
-      uv_restore_after_powerfail();
+  if (restored) {                               // 復旧データがある場合のみ復旧処理を行う
+    if (systemState.restoreUvAfterPowerFail) {  // DIPスイッチで復旧を許可している場合のみ復旧処理を行う
+      if (ps.pump == 1) {                       // ポンプ復旧
+        systemState.pumpState = STATE_RUNNING;  // 状態をRUNNINGにセット
+        systemState.pumpStartTime = millis();               // 起動時刻を記録
+        systemState.pumpStartupOk = false;      // 起動成功フラグは一旦リセット
+        systemState.pumpStartupError = false;   // 起動コマンドを送るのはループ内のロジックに任せる（起動条件が整うまで送らない）
+        startupMonitor_begin();                 // 起動監視開始
+        rpm_value = getTargetRpm();             // 目標回転数を取得
+        sendRpmCommand(rpm_value);              // ★追加★ 起動コマンドを送るのはループ内のロジックに任せる（起動条件が整うまで送らない）
+        DEBUG_PRINTLN("Pump restored.");        // ★起動コマンドはループ内のロジックに任せる
+      }
+      if (ps.uv == 1) {                         // UVランプ復旧
+        DEBUG_PRINTLN("UV restored.");          // ★追加★ 復旧させるのは状態だけ。実際の起動コマンドはループ内のロジックに任せる（起動条件が整うまで送らない）
+        uv_restore_after_powerfail();           // ★追加★ UVランプの復旧処理（状態だけ復旧させる。実際の起動コマンドはループ内のロジックに任せる）
+      }
+    } else {
+      DEBUG_PRINTLN("Power-fail restore disabled by DIP_SW1.");
+      systemState.pumpState = STATE_STOPPED;    // 復旧させない場合は確実に停止状態からスタートさせる
+      systemState.uvState   = STATE_STOPPED;    // 復旧させない場合は確実に停止状態からスタートさせる
     }
   }
-
   FlexiTimer2::set(TIMER_INTERVAL_MS, timerInterrupt);
   FlexiTimer2::start();
-  runStartupLedSequence(detectedLamps); // LEDの起動シーケンスを実行
   DEBUG_PRINTLN("Initialization complete. Starting main loop.");
   #ifdef PU_DEBUG_MODE
     tm1_rpm_rpm.displayNum(123); tm2_cur_thr.displayNum(456); tm3_cur_pea.displayNum(789);
@@ -317,10 +307,10 @@ void setup() {
 // loop() - メインループ
 // ----------------------------------------------------------------
 void loop() {
-  updateCurrentThreshold();     // [変更点] 毎ループ、可変抵抗の値を読み込んでしきい値を更新
-  handleSwitchInputs();         // スイッチ入力処理
-  updateSystemState();          // ポンプの状態更新
-  uv_loop_task();               // UV機能のループ処理を呼び出す
+  uv_loop_task();               // 最初 UV機能のループ処理を呼び出す
+  updateSystemState();          // ２番目 ポンプの状態更新
+  handleSwitchInputs();         // ３番目 スイッチ入力処理
+  updateCurrentThreshold();     // ４番目 [変更点] 毎ループ、可変抵抗の値を読み込んでしきい値を更新
   updateTCntPin();              // ★★★ T_CNT_PINの状態を更新 ★★★
   // debugPrintDipSwitches(); // デバッグ用：DIPスイッチの状態をシリアル出力
   updateDisplays();             // 3桁表示のため、1000以上は999として表示
@@ -384,15 +374,16 @@ void initializePins() {
   pinMode(P_SW_STOP_PIN, INPUT_PULLUP);
   pinMode(EM_LAMP_PIN, OUTPUT);
   pinMode(P_LAMP_PIN, OUTPUT);
- 
+  delay(5); // 出力ピンの状態が安定するのを待つ
+  digitalWrite(P_LAMP_PIN, LOW);
+
   pinMode(LED_ISR_PIN, OUTPUT);
   
   pinMode(LED_SERIAL_RX_PIN, OUTPUT);
   pinMode(T_CNT_PIN, OUTPUT); // ★★★ T_CNT_PINの初期化をこちらに移動 ★★★
-  delay(5);
   digitalWrite(T_CNT_PIN, LOW);// ★★★ 初期状態はLOW ★★★
 
-  digitalWrite(LED_PUMP_STOP_PIN, HIGH);
+  // digitalWrite(LED_PUMP_STOP_PIN, HIGH);
   // ★追加★ アワーメーターリセット出力ピン の初期化 2025年12月11日
   pinMode(HOURMETER_RESET_PIN, OUTPUT);
   digitalWrite(HOURMETER_RESET_PIN, LOW); // 通常時は非リセット状態（アクティブHIGH前提）
@@ -509,9 +500,14 @@ void stopPump() {
   digitalWrite(P_LAMP_PIN, LOW);
   fan_off();
 
-  sendStopCommand();
+  // ★STOPを複数回送る（確実停止）
+  for (int i = 0; i < 3; i++) {
+    sendStopCommand();
+    delay(20);
+  }
 
   // ★★★ これを追加 ★★★
+  systemState.pumpState = STATE_STOPPED; // 念押し
   PersistState ps;
   ps.pump = 0;
   ps.uv   = (systemState.uvState == STATE_RUNNING);
@@ -520,12 +516,9 @@ void stopPump() {
 
 // スイッチ検出処理
 void handleSwitchInputs() {
-
   // ポンプスタートボタン
   if (isButtonPressed(pumpStartSwitch)) {
-
     if (systemState.pumpState == STATE_STOPPED) {
-
       PU_DEBUG_PRINTLN("Pump Start Switch ON");
 
       //====================================================
@@ -548,17 +541,6 @@ void handleSwitchInputs() {
       systemState.pumpStartupError     = false;
       maxCurrentSinceStart = 0;
 
-      //==== ▼▼▼ ここから startup_monitorへ移行済みのため不要 ▼▼▼ ====
-
-      // startupPhase       = STARTUP_INRUSH_IGNORE;
-      // startupPeakCount   = 0;
-      // baselineSum        = 0;
-      // baselineCount      = 0;
-      // baselineAvg        = 0;
-      // suctionRiseDetected = false;
-
-      //==== ▲▲▲ 不要部分ここまで ▲▲▲ ====
-
       // ★ 新方式：startup_monitorを初期化
       startupMonitor_begin();
 
@@ -569,7 +551,13 @@ void handleSwitchInputs() {
       //====================================================
       systemState.pumpState = STATE_RUNNING;
 
-      pumpStartTime = millis();
+      // ★追加：状態保存
+      PersistState ps;
+      ps.pump = 1;
+      ps.uv   = (systemState.uvState == STATE_RUNNING);
+      savePersistState(ps);
+
+      systemState.pumpStartTime = millis();
 
       //====================================================
       // 起動直後に回転数コマンドを即送信
@@ -604,11 +592,11 @@ static void updateEmLamp() {
 
 // ポンプの状態更新
 void updateSystemState() {
-  rpm_value = getTargetRpm();
+  rpm_value = getTargetRpm();// 目標回転数を取得（可変抵抗または固定値）
 
   if (systemState.pumpState == STATE_RUNNING) {
     digitalWrite(P_LAMP_PIN, HIGH);
-    unsigned long elapsedTimeSec = (millis() - pumpStartTime) / 1000UL;
+    unsigned long elapsedTimeSec = (millis() - systemState.pumpStartTime) / 1000UL;
 
     // ★追加★ 起動後120秒以内にしきい値に達しなかった場合の「低電流エラー」 2025-12-09
     if (!systemState.pumpStartupOk && !systemState.pumpStartupError &&
@@ -660,28 +648,20 @@ void updateSystemState() {
     }
 
     //====================================================
-// [DIP_SW7] UV自動起動（ポンプ起動後）
-//====================================================
-if (systemState.uvAutoStart &&
-    systemState.pumpState == STATE_RUNNING &&
-    !uvAutoStarted &&
-    !is_uv_running()) {
-
-  // ポンプ起動から1秒待つ
-  if (millis() - pumpStartTime >= 1000) {
-
-    // UVスタート相当の処理
-    uv_force_restore(true);
-
-    DEBUG_PRINTLN("[AUTO] UV auto-start by DIP_SW7");
-    uvAutoStarted = true;  // 二重起動防止
-  }
-}
-
+    // [DIP_SW7] UV自動起動（ポンプ起動後）
+    //====================================================
+    if (systemState.uvAutoStart && systemState.pumpState == STATE_RUNNING &&
+        !uvAutoStarted && !is_uv_running()) {
+      // ポンプ起動から1秒待つ
+      if (millis() - systemState.pumpStartTime >= 1000) {
+        // UVスタート相当の処理
+        uv_force_restore(true);
+        DEBUG_PRINTLN("[AUTO] UV auto-start by DIP_SW7");
+        uvAutoStarted = true;  // 二重起動防止
+      }
+    }
   } else {
     digitalWrite(P_LAMP_PIN, LOW);
-    // digitalWrite(LED_PUMP_RUN_PIN, LOW);
-    // digitalWrite(LED_PUMP_STOP_PIN, HIGH);
   }
   updateEmLamp();   // ★追加：EMランプはここで一括制御
 }
@@ -836,7 +816,8 @@ void handlePeriodicTasks() {
     commandTimerCount = 0;
     if (systemState.pumpState == STATE_RUNNING) {
       sendRpmCommand(rpm_value);
-    }else{
+    // }else{
+    //   sendStopCommand();   // ← 追加
     }
   }
 }
@@ -922,7 +903,7 @@ int readCurrentSensorAdc() {
   }
 
   // pumpStartTime 起点で、1.5秒単位の“ピーク区間”を選ぶ
-  unsigned long t_ms = millis() - pumpStartTime;
+  unsigned long t_ms = millis() - systemState.pumpStartTime;
   uint16_t segment = (uint16_t)(t_ms / 1500UL);       // 1.5秒区間番号
   uint16_t in_seg  = (uint16_t)(t_ms % 1500UL);       // 区間内の経過ms
 
@@ -1058,7 +1039,7 @@ void measurePeakCurrent() {
 int getTargetRpm() {
   // ポンプが運転中で、かつ起動後プライミング時間内の場合にシーケンスを実行
   if (systemState.pumpState == STATE_RUNNING) {
-    unsigned long elapsedTimeMillis = millis() - pumpStartTime;
+    unsigned long elapsedTimeMillis = millis() - systemState.pumpStartTime;
     if (elapsedTimeMillis < (PRIMING_DURATION_SEC * 1000UL)) {
       // 1. 定数を定義
       const float RAMP_CYCLE_SEC = PRIMING_CYCLE_SEC; // 回転数が上下する時間（4秒）
@@ -1097,7 +1078,7 @@ int getTargetRpm() {
       float rpm_midpoint = (PRIMING_MAX_RPM + PRIMING_MIN_RPM) / 2.0;
       int targetRpm = (int)(rpm_midpoint + (sinValue * rpm_range / 2.0));
       
-      return targetRpm;
+      return targetRpm; // プライミング時間内はサインカーブで変化させる
     }
   }
 

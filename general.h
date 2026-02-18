@@ -43,7 +43,7 @@
 extern const int EM_LAMP_PIN;
 extern const int P_LAMP_PIN;
 extern const int LED_PUMP_RUN_PIN;
-extern const int LED_PUMP_STOP_PIN;
+// extern const int LED_PUMP_STOP_PIN;
 // uv_control.h などに追加
 extern const int UV_SW_START_PIN;
 extern const int UV_SW_STOP_PIN;
