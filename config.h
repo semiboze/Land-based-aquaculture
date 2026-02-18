@@ -14,15 +14,16 @@ const int MAX_UV_LAMPS = 10;                      // UVランプ最大本数
 // ビルドスイッチ
 //====================================================
 #define DEBUG_MODE
-// #define UV_DEBUG_MODE                               // UVコントロールデバッグモード
+#define UV_DEBUG_MODE                               // UVコントロールデバッグモード
 // #define PU_DEBUG_MODE                               // ポンプ通信用デバッグモード                 
+// #define PRIMING_TEST                                // プライミングテストモード（プライミング時間短縮＆サインカーブで回転数変化）
 
 static const int T_CNT_PIN = 9;                     // ★★★ T_CNT_PINの定義を追加 ★★★              
 
 //====================================================
 // ファームウェア情報
 //====================================================
-static const char* const FirmwareVersion = "20260218_R1";
+static const char* const FirmwareVersion = "20260218_R2";
 
 //====================================================
 // [ファン制御] ここだけ見ればON/OFFが分かるようにする
@@ -42,11 +43,14 @@ static const char* const FirmwareVersion = "20260218_R1";
 // ポンプ基本設定
 //====================================================
 static const int NORMAL_MAX_RPM          = 2500;    // 固定回転数モードでの最大回転数
-static const int PRIMING_DURATION_SEC    = 30;      // プライミングを行う時間（秒）
-static const float HOLD_DURATION_SEC     = 1.0;     // 最高回転数での保持時間（秒）
-static const int PRIMING_MAX_RPM         = 2500;    // プライミング中の最大回転数
-static const int PRIMING_MIN_RPM         = 2000;    // プライミング中の最小回転数
-static const float PRIMING_CYCLE_SEC     = 4.0;     // プライミングの1サイクルの時間（秒）
+#if defined(PRIMING_TEST)
+  static const int PRIMING_DURATION_SEC    = 10;      // プライミングを行う時間（秒）【テスト用に短縮】
+  static const int PRIMING_DURATION_SEC    = 30;      // プライミングを行う時間（秒）
+  static const float HOLD_DURATION_SEC     = 1.0;     // 最高回転数での保持時間（秒）
+  static const int PRIMING_MAX_RPM         = 2500;    // プライミング中の最大回転数
+  static const int PRIMING_MIN_RPM         = 2000;    // プライミング中の最小回転数
+  static const float PRIMING_CYCLE_SEC     = 4.0;     // プライミングの1サイクルの時間（秒）
+#endif
 
 static const unsigned long DEFINE_CURRENT_STATUS = 30;  // ポンプ起動後電流が閾値に到達するまでの監視タイマー(秒)
 static const int CURRENT_NOISE_FLOOR = 512;             // 電流ピーク検出用 ノイズ下限（センサ未動作/ノイズ対策）

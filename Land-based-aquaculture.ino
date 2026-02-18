@@ -1037,6 +1037,7 @@ void measurePeakCurrent() {
  * @details 最高速度でのみ2秒間の保持時間を設けた修正版。
  */
 int getTargetRpm() {
+#if defined(PRIMING_TEST)                                 // テスト用：常にサインカーブで変化させる
   // ポンプが運転中で、かつ起動後プライミング時間内の場合にシーケンスを実行
   if (systemState.pumpState == STATE_RUNNING) {
     unsigned long elapsedTimeMillis = millis() - systemState.pumpStartTime;
@@ -1081,6 +1082,7 @@ int getTargetRpm() {
       return targetRpm; // プライミング時間内はサインカーブで変化させる
     }
   }
+#endif
 
   // プライミング時間終了後、またはポンプ停止時は通常の回転数制御に戻る
   if (rpmControlMode == MODE_VOLUME) {
