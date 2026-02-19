@@ -223,7 +223,7 @@ void checkUvLampConnection() {
       // ★追加★ UV断線状態を保持（警告判定用）
       uvBroken[i] = !ok;
 
-      driveUvIndicator(i, ok);
+      // driveUvIndicator(i, ok); これのせいでインジケータランプが一瞬点灯して消える？2026-02-19
 
       UV_DEBUG_PRINT(i + 1);
       UV_DEBUG_PRINT(":");
