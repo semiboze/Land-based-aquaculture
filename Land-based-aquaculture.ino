@@ -1050,62 +1050,126 @@ void measurePeakCurrent() {
  * @brief 実行時モードに応じて目標回転数を取得する（サインカーブ・プライミング機能付き）
  * @details 最高速度でのみ2秒間の保持時間を設けた修正版。
  */
+// int getTargetRpm() {
+// #if defined(PRIMING_TEST)                                 //
+//   // ポンプが運転中で、かつ起動後プライミング時間内の場合にシーケンスを実行
+//   if (systemState.pumpState == STATE_RUNNING) {
+//     unsigned long elapsedTimeMillis = millis() - systemState.pumpStartTime;
+//     if (elapsedTimeMillis < (PRIMING_DURATION_SEC * 1000UL)) {
+//       // 1. 定数を定義
+//       const float RAMP_CYCLE_SEC = PRIMING_CYCLE_SEC; // 回転数が上下する時間（4秒）
+//       // const float HOLD_DURATION_SEC = 2.0;          // 最高回転数での保持時間（秒）
+//       // 1サイクルの合計時間 = 回転の上下時間(4秒) + 最高保持(2秒)
+//       const float TOTAL_CYCLE_SEC = RAMP_CYCLE_SEC + HOLD_DURATION_SEC;
+
+//       // 2. 現在の経過時間が、1サイクル(6秒)の中でどの位置にあるかを計算
+//       unsigned long timeInCycleMillis = elapsedTimeMillis % (unsigned long)(TOTAL_CYCLE_SEC * 1000.0);
+
+//       // 3. 保持時間を考慮した「見かけ上の経過時間」を計算する
+//       unsigned long rampTimeMillis;
+//       // サインカーブが頂点に達する時間 (4秒サイクルの1/4 = 1秒)
+//       unsigned long maxRpmHoldStart = (unsigned long)((RAMP_CYCLE_SEC / 4.0) * 1000.0); // 1000ms
+//       // 最高回転数での保持が終了する時間
+//       unsigned long maxRpmHoldEnd   = maxRpmHoldStart + (unsigned long)(HOLD_DURATION_SEC * 1000.0); // 3000ms
+
+//       if (timeInCycleMillis < maxRpmHoldStart) {
+//         // 最高回転数に達するまで（サインカーブの0秒 -> 1秒地点）
+//         rampTimeMillis = timeInCycleMillis;
+//       } else if (timeInCycleMillis < maxRpmHoldEnd) {
+//         // 最高回転数で保持（サインカーブの1秒地点で時間を止める）
+//         rampTimeMillis = maxRpmHoldStart;
+//       } else {
+//         // 最低回転数に向かって下降し、再び上昇する（サインカーブの1秒 -> 4秒地点）
+//         // 止まっていた時間(2秒)を考慮して、サインカーブの時間を進める
+//         rampTimeMillis = maxRpmHoldStart + (timeInCycleMillis - maxRpmHoldEnd);
+//       }
+
+//       // 4. 「見かけ上の経過時間」を使って、元のサインカーブ計算を実行
+//       float angle = (rampTimeMillis / (RAMP_CYCLE_SEC * 1000.0)) * 2.0 * PI;
+//       float sinValue = sin(angle);
+
+//       // 5. -1.0〜1.0の値を、最小RPM〜最大RPMの範囲に変換(マッピング)
+//       float rpm_range = PRIMING_MAX_RPM - PRIMING_MIN_RPM;
+//       float rpm_midpoint = (PRIMING_MAX_RPM + PRIMING_MIN_RPM) / 2.0;
+//       int targetRpm = (int)(rpm_midpoint + (sinValue * rpm_range / 2.0));
+      
+//       return targetRpm; // プライミング時間内はサインカーブで変化させる
+//     }
+//   }
+// #endif
+
+//   // プライミング時間終了後、またはポンプ停止時は通常の回転数制御に戻る
+//   if (rpmControlMode == MODE_VOLUME) {
+//     return calculateRpmFromVolume(); // ボリュームから計算
+//   } else { // MODE_FIXED
+//     return NORMAL_MAX_RPM; // 設定された固定値を返す
+//   }
+// }
+/**
+ * @brief 実行時モードに応じて目標回転数を取得する（スロースタート機能付き）
+ */
 int getTargetRpm() {
-#if defined(PRIMING_TEST)                                 //
+  // --- スロースタートの設定（ここを調整してください） ---
+  const unsigned long SOFT_START_DURATION_MS = 10000; // 3秒かけて加速
+  
+  int finalTargetRpm = 0; // 最終的な目標回転数
+
+#if defined(PRIMING_TEST)
   // ポンプが運転中で、かつ起動後プライミング時間内の場合にシーケンスを実行
   if (systemState.pumpState == STATE_RUNNING) {
     unsigned long elapsedTimeMillis = millis() - systemState.pumpStartTime;
     if (elapsedTimeMillis < (PRIMING_DURATION_SEC * 1000UL)) {
-      // 1. 定数を定義
-      const float RAMP_CYCLE_SEC = PRIMING_CYCLE_SEC; // 回転数が上下する時間（4秒）
-      // const float HOLD_DURATION_SEC = 2.0;          // 最高回転数での保持時間（秒）
-      // 1サイクルの合計時間 = 回転の上下時間(4秒) + 最高保持(2秒)
+      // （既存のプライミング計算ロジックはそのまま維持）
+      const float RAMP_CYCLE_SEC = PRIMING_CYCLE_SEC;
       const float TOTAL_CYCLE_SEC = RAMP_CYCLE_SEC + HOLD_DURATION_SEC;
-
-      // 2. 現在の経過時間が、1サイクル(6秒)の中でどの位置にあるかを計算
       unsigned long timeInCycleMillis = elapsedTimeMillis % (unsigned long)(TOTAL_CYCLE_SEC * 1000.0);
-
-      // 3. 保持時間を考慮した「見かけ上の経過時間」を計算する
       unsigned long rampTimeMillis;
-      // サインカーブが頂点に達する時間 (4秒サイクルの1/4 = 1秒)
-      unsigned long maxRpmHoldStart = (unsigned long)((RAMP_CYCLE_SEC / 4.0) * 1000.0); // 1000ms
-      // 最高回転数での保持が終了する時間
-      unsigned long maxRpmHoldEnd   = maxRpmHoldStart + (unsigned long)(HOLD_DURATION_SEC * 1000.0); // 3000ms
+      unsigned long maxRpmHoldStart = (unsigned long)((RAMP_CYCLE_SEC / 4.0) * 1000.0);
+      unsigned long maxRpmHoldEnd   = maxRpmHoldStart + (unsigned long)(HOLD_DURATION_SEC * 1000.0);
 
       if (timeInCycleMillis < maxRpmHoldStart) {
-        // 最高回転数に達するまで（サインカーブの0秒 -> 1秒地点）
         rampTimeMillis = timeInCycleMillis;
       } else if (timeInCycleMillis < maxRpmHoldEnd) {
-        // 最高回転数で保持（サインカーブの1秒地点で時間を止める）
         rampTimeMillis = maxRpmHoldStart;
       } else {
-        // 最低回転数に向かって下降し、再び上昇する（サインカーブの1秒 -> 4秒地点）
-        // 止まっていた時間(2秒)を考慮して、サインカーブの時間を進める
         rampTimeMillis = maxRpmHoldStart + (timeInCycleMillis - maxRpmHoldEnd);
       }
 
-      // 4. 「見かけ上の経過時間」を使って、元のサインカーブ計算を実行
       float angle = (rampTimeMillis / (RAMP_CYCLE_SEC * 1000.0)) * 2.0 * PI;
       float sinValue = sin(angle);
-
-      // 5. -1.0〜1.0の値を、最小RPM〜最大RPMの範囲に変換(マッピング)
       float rpm_range = PRIMING_MAX_RPM - PRIMING_MIN_RPM;
       float rpm_midpoint = (PRIMING_MAX_RPM + PRIMING_MIN_RPM) / 2.0;
-      int targetRpm = (int)(rpm_midpoint + (sinValue * rpm_range / 2.0));
+      finalTargetRpm = (int)(rpm_midpoint + (sinValue * rpm_range / 2.0));
       
-      return targetRpm; // プライミング時間内はサインカーブで変化させる
+      return finalTargetRpm; 
     }
   }
 #endif
 
-  // プライミング時間終了後、またはポンプ停止時は通常の回転数制御に戻る
+  // --- 通常運転またはボリューム制御時の計算 ---
   if (rpmControlMode == MODE_VOLUME) {
-    return calculateRpmFromVolume(); // ボリュームから計算
-  } else { // MODE_FIXED
-    return NORMAL_MAX_RPM; // 設定された固定値を返す
+    finalTargetRpm = calculateRpmFromVolume();
+  } else {
+    finalTargetRpm = NORMAL_MAX_RPM;
   }
-}
 
+  // --- ★追加：スロースタート処理 ---
+  if (systemState.pumpState == STATE_RUNNING) {
+    unsigned long elapsed = millis() - systemState.pumpStartTime;
+    if (elapsed < SOFT_START_DURATION_MS) {
+      // 経過時間割合（0.0～1.0）を計算し、目標回転数に乗算する
+// 0.0〜1.0の時間を0〜PI（180度）の位相に変換
+float phase = ((float)elapsed / (float)SOFT_START_DURATION_MS) * PI;
+// コサイン波形を利用して0.0から1.0へ滑らかに変化させる（S字カーブ）
+float ratio = (1.0 - cos(phase)) / 2.0; 
+finalTargetRpm = (int)(finalTargetRpm * ratio);      
+      // モーターが回りはじめる最低回転数（600rpm）を下回らないようにガード
+      if (finalTargetRpm < 600) finalTargetRpm = 600;
+    }
+  }
+
+  return finalTargetRpm;
+}
 /**
  * @brief 配列を小さい順に並べ替える（バブルソート）
  * @param arr 並べ替える配列
