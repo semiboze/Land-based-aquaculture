@@ -1108,68 +1108,98 @@ void measurePeakCurrent() {
 /**
  * @brief 実行時モードに応じて目標回転数を取得する（スロースタート機能付き）
  */
-int getTargetRpm() {
-  // --- スロースタートの設定（ここを調整してください） ---
-  const unsigned long SOFT_START_DURATION_MS = 10000; // 3秒かけて加速
+// int getTargetRpm() {
+//   // --- スロースタートの設定（ここを調整してください） ---
+//   const unsigned long SOFT_START_DURATION_MS = 10000; // 3秒かけて加速
   
-  int finalTargetRpm = 0; // 最終的な目標回転数
+//   int finalTargetRpm = 0; // 最終的な目標回転数
 
-#if defined(PRIMING_TEST)
-  // ポンプが運転中で、かつ起動後プライミング時間内の場合にシーケンスを実行
-  if (systemState.pumpState == STATE_RUNNING) {
-    unsigned long elapsedTimeMillis = millis() - systemState.pumpStartTime;
-    if (elapsedTimeMillis < (PRIMING_DURATION_SEC * 1000UL)) {
-      // （既存のプライミング計算ロジックはそのまま維持）
-      const float RAMP_CYCLE_SEC = PRIMING_CYCLE_SEC;
-      const float TOTAL_CYCLE_SEC = RAMP_CYCLE_SEC + HOLD_DURATION_SEC;
-      unsigned long timeInCycleMillis = elapsedTimeMillis % (unsigned long)(TOTAL_CYCLE_SEC * 1000.0);
-      unsigned long rampTimeMillis;
-      unsigned long maxRpmHoldStart = (unsigned long)((RAMP_CYCLE_SEC / 4.0) * 1000.0);
-      unsigned long maxRpmHoldEnd   = maxRpmHoldStart + (unsigned long)(HOLD_DURATION_SEC * 1000.0);
+// #if defined(PRIMING_TEST)
+//   // ポンプが運転中で、かつ起動後プライミング時間内の場合にシーケンスを実行
+//   if (systemState.pumpState == STATE_RUNNING) {
+//     unsigned long elapsedTimeMillis = millis() - systemState.pumpStartTime;
+//     if (elapsedTimeMillis < (PRIMING_DURATION_SEC * 1000UL)) {
+//       // （既存のプライミング計算ロジックはそのまま維持）
+//       const float RAMP_CYCLE_SEC = PRIMING_CYCLE_SEC;
+//       const float TOTAL_CYCLE_SEC = RAMP_CYCLE_SEC + HOLD_DURATION_SEC;
+//       unsigned long timeInCycleMillis = elapsedTimeMillis % (unsigned long)(TOTAL_CYCLE_SEC * 1000.0);
+//       unsigned long rampTimeMillis;
+//       unsigned long maxRpmHoldStart = (unsigned long)((RAMP_CYCLE_SEC / 4.0) * 1000.0);
+//       unsigned long maxRpmHoldEnd   = maxRpmHoldStart + (unsigned long)(HOLD_DURATION_SEC * 1000.0);
 
-      if (timeInCycleMillis < maxRpmHoldStart) {
-        rampTimeMillis = timeInCycleMillis;
-      } else if (timeInCycleMillis < maxRpmHoldEnd) {
-        rampTimeMillis = maxRpmHoldStart;
-      } else {
-        rampTimeMillis = maxRpmHoldStart + (timeInCycleMillis - maxRpmHoldEnd);
-      }
+//       if (timeInCycleMillis < maxRpmHoldStart) {
+//         rampTimeMillis = timeInCycleMillis;
+//       } else if (timeInCycleMillis < maxRpmHoldEnd) {
+//         rampTimeMillis = maxRpmHoldStart;
+//       } else {
+//         rampTimeMillis = maxRpmHoldStart + (timeInCycleMillis - maxRpmHoldEnd);
+//       }
 
-      float angle = (rampTimeMillis / (RAMP_CYCLE_SEC * 1000.0)) * 2.0 * PI;
-      float sinValue = sin(angle);
-      float rpm_range = PRIMING_MAX_RPM - PRIMING_MIN_RPM;
-      float rpm_midpoint = (PRIMING_MAX_RPM + PRIMING_MIN_RPM) / 2.0;
-      finalTargetRpm = (int)(rpm_midpoint + (sinValue * rpm_range / 2.0));
+//       float angle = (rampTimeMillis / (RAMP_CYCLE_SEC * 1000.0)) * 2.0 * PI;
+//       float sinValue = sin(angle);
+//       float rpm_range = PRIMING_MAX_RPM - PRIMING_MIN_RPM;
+//       float rpm_midpoint = (PRIMING_MAX_RPM + PRIMING_MIN_RPM) / 2.0;
+//       finalTargetRpm = (int)(rpm_midpoint + (sinValue * rpm_range / 2.0));
       
-      return finalTargetRpm; 
+//       return finalTargetRpm; 
+//     }
+//   }
+// #endif
+
+//   // --- 通常運転またはボリューム制御時の計算 ---
+//   if (rpmControlMode == MODE_VOLUME) {
+//     finalTargetRpm = calculateRpmFromVolume();
+//   } else {
+//     finalTargetRpm = NORMAL_MAX_RPM;
+//   }
+
+//   // --- ★追加：スロースタート処理 ---
+//   if (systemState.pumpState == STATE_RUNNING) {
+//     unsigned long elapsed = millis() - systemState.pumpStartTime;
+//     if (elapsed < SOFT_START_DURATION_MS) {
+//       // 経過時間割合（0.0～1.0）を計算し、目標回転数に乗算する
+// // 0.0〜1.0の時間を0〜PI（180度）の位相に変換
+// float phase = ((float)elapsed / (float)SOFT_START_DURATION_MS) * PI;
+// // コサイン波形を利用して0.0から1.0へ滑らかに変化させる（S字カーブ）
+// float ratio = (1.0 - cos(phase)) / 2.0; 
+// finalTargetRpm = (int)(finalTargetRpm * ratio);      
+//       // モーターが回りはじめる最低回転数（600rpm）を下回らないようにガード
+//       if (finalTargetRpm < 600) finalTargetRpm = 600;
+//     }
+//   }
+
+//   return finalTargetRpm;
+// }
+int getTargetRpm() {
+    int finalTargetRpm = 0;
+
+    // 1. 最終目標値の決定 (パターンB) [4, 5]
+    if (rpmControlMode == MODE_VOLUME) {
+        // ピン42がLOWならボリューム値を最終目標にする
+        finalTargetRpm = calculateRpmFromVolume();
+    } else {
+        // ピン42がHIGH（固定モード）なら 2400rpm
+        finalTargetRpm = NORMAL_MAX_RPM;
     }
-  }
-#endif
 
-  // --- 通常運転またはボリューム制御時の計算 ---
-  if (rpmControlMode == MODE_VOLUME) {
-    finalTargetRpm = calculateRpmFromVolume();
-  } else {
-    finalTargetRpm = NORMAL_MAX_RPM;
-  }
+    // 2. 加速計算
+    if (systemState.pumpState == STATE_RUNNING) {
+        unsigned long elapsed = millis() - systemState.pumpStartTime; // [5]
 
-  // --- ★追加：スロースタート処理 ---
-  if (systemState.pumpState == STATE_RUNNING) {
-    unsigned long elapsed = millis() - systemState.pumpStartTime;
-    if (elapsed < SOFT_START_DURATION_MS) {
-      // 経過時間割合（0.0～1.0）を計算し、目標回転数に乗算する
-// 0.0〜1.0の時間を0〜PI（180度）の位相に変換
-float phase = ((float)elapsed / (float)SOFT_START_DURATION_MS) * PI;
-// コサイン波形を利用して0.0から1.0へ滑らかに変化させる（S字カーブ）
-float ratio = (1.0 - cos(phase)) / 2.0; 
-finalTargetRpm = (int)(finalTargetRpm * ratio);      
-      // モーターが回りはじめる最低回転数（600rpm）を下回らないようにガード
-      if (finalTargetRpm < 600) finalTargetRpm = 600;
+        if (elapsed < STARTUP_RAMP_DURATION_MS) {
+            // 0秒から15秒の間、700rpmから最終目標まで直線的に割り当てる
+            // map(現在の値, 入力低, 入力高, 出力低, 出力高)
+            finalTargetRpm = map(elapsed, 0, STARTUP_RAMP_DURATION_MS, STARTUP_RPM_INITIAL, finalTargetRpm);
+        }
+        // 15秒経過後はそのまま finalTargetRpm (最終目標値) を維持
     }
-  }
 
-  return finalTargetRpm;
+    // 3. 最低回転数ガード
+    if (finalTargetRpm < 600) finalTargetRpm = 600; // [5]
+
+    return finalTargetRpm;
 }
+
 /**
  * @brief 配列を小さい順に並べ替える（バブルソート）
  * @param arr 並べ替える配列

@@ -15,7 +15,8 @@ const int MAX_UV_LAMPS = 10;                      // UVランプ最大本数
 //====================================================
 #define DEBUG_MODE
 #define UV_DEBUG_MODE                               // UVコントロールデバッグモード
-// #define PU_DEBUG_MODE                               // ポンプ通信用デバッグモード                 
+// #define PU_DEBUG_MODE                               // ポンプ通信用デバッグモード     
+// [修正] プライミングテストモードは完全に無効化（削除またはコメントアウト）
 // #define PRIMING_TEST                                // プライミングテストモード（プライミング時間短縮＆サインカーブで回転数変化）
 
 static const int T_CNT_PIN = 9;                     // ★★★ T_CNT_PINの定義を追加 ★★★              
@@ -23,7 +24,7 @@ static const int T_CNT_PIN = 9;                     // ★★★ T_CNT_PINの定
 //====================================================
 // ファームウェア情報
 //====================================================
-static const char* const FirmwareVersion = "20260305_R3";
+static const char* const FirmwareVersion = "20260416_R4";
 
 //====================================================
 // [ファン制御] ここだけ見ればON/OFFが分かるようにする
@@ -42,8 +43,11 @@ static const char* const FirmwareVersion = "20260305_R3";
 //====================================================
 // ポンプ基本設定
 //====================================================
-static const int NORMAL_MAX_RPM          = 2500;    // 固定回転数モードでの最大回転数
-#if defined(PRIMING_TEST)
+static const int NORMAL_MAX_RPM          = 2400;    // 固定回転数モードでの最大回転数
+// [修正] ポンプ基本設定
+static const int STARTUP_RPM_INITIAL = 1500;  // 【新規】起動開始時の回転数
+static const int STARTUP_RAMP_DURATION_MS = 30000; // 【新規】加速にかける時間 (30秒)
+#if defined(PRIMING_TEST) // プライミングテストモードが定義されている場合、プライミング時間を短縮してサインカーブで回転数変化させるが無効化
   static const int PRIMING_DURATION_SEC    = 10;      // プライミングを行う時間（秒）【テスト用に短縮】
   static const int PRIMING_DURATION_SEC    = 30;      // プライミングを行う時間（秒）
   static const float HOLD_DURATION_SEC     = 1.0;     // 最高回転数での保持時間（秒）
@@ -52,11 +56,11 @@ static const int NORMAL_MAX_RPM          = 2500;    // 固定回転数モード�
   static const float PRIMING_CYCLE_SEC     = 4.0;     // プライミングの1サイクルの時間（秒）
 #endif
 
-static const unsigned long DEFINE_CURRENT_STATUS = 30;  // ポンプ起動後電流が閾値に到達するまでの監視タイマー(秒)
 static const int CURRENT_NOISE_FLOOR = 512;             // 電流ピーク検出用 ノイズ下限（センサ未動作/ノイズ対策）
-
+// [修正] 起動監視設定
+static const unsigned long DEFINE_CURRENT_STATUS = 45; // [2] 監視タイマーを30秒から45秒に延長
+static const unsigned long PUMP_STARTUP_TIMEOUT_SEC = DEFINE_CURRENT_STATUS; // [3] 45秒に自動同期
 static const unsigned long PUMP_TIMEOUT_SEC = 60;       // 既存の過電流チェック用の時間（既存仕様を維持）
-static const unsigned long PUMP_STARTUP_TIMEOUT_SEC = DEFINE_CURRENT_STATUS;  // 起動後電流が閾値に到達するまでの監視タイマー秒 2025-12-09
 
 static const int PUMP_CURRENT_THRESHOLD_DEFAULT = 512;  // デフォルトのポンプ電流しきい値
 static const int PUMP_OVERCURRENT_THRESHOLD     = 850;  // 仮：実機ログ見て調整
