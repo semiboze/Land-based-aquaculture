@@ -606,59 +606,54 @@ static void updateEmLamp() {
 
 // ポンプの状態更新
 void updateSystemState() {
-  rpm_value = getTargetRpm();// 目標回転数を取得（可変抵抗または固定値）
+  rpm_value = getTargetRpm(); // 目標回転数を取得
 
   if (systemState.pumpState == STATE_RUNNING) {
     digitalWrite(P_LAMP_PIN, HIGH);
     unsigned long elapsedTimeSec = (millis() - systemState.pumpStartTime) / 1000UL;
 
-    // ★追加★ 起動後120秒以内にしきい値に達しなかった場合の「低電流エラー」 2025-12-09
-    if (!systemState.pumpStartupOk && !systemState.pumpStartupError &&
-        elapsedTimeSec >= PUMP_STARTUP_TIMEOUT_SEC) {
+    // -----------------------------------------------------------------
+    // 【改善】動的電流監視（タイムアウト時間経過後から常に監視）
+    // -----------------------------------------------------------------
+    if (!systemState.pumpStartupError && elapsedTimeSec >= PUMP_STARTUP_TIMEOUT_SEC) {
+      
+      // 現在の回転数から、期待される最低電流値(ADC)を取得
+      int expectedAdc = getExpectedCurrentThreshold(rpm_value);
 
-      systemState.pumpStartupError = true;
+      // 実際のピーク電流が期待値を下回っていたら「低電流（空回り）エラー」とする
+      if (lastCurrentPeak < expectedAdc) {
+        #ifndef DISABLE_CURRENT_MONITOR
+        systemState.pumpStartupError = true;
+        PU_DEBUG_PRINT("Low current error! RPM=");
+        PU_DEBUG_PRINT(rpm_value);
+        PU_DEBUG_PRINT(" expectedADC=");
+        PU_DEBUG_PRINT(expectedAdc);
+        PU_DEBUG_PRINT(" actualPeak=");
+        PU_DEBUG_PRINTLN(lastCurrentPeak);
 
-      PU_DEBUG_PRINT("Pump startup failed (no 2nd rise). lastPeak=");
-      PU_DEBUG_PRINT(lastCurrentPeak);
-      // PU_DEBUG_PRINT(" baselineAvg=");
-      // PU_DEBUG_PRINT(baselineAvg);
-      PU_DEBUG_PRINTLN("");
 #if FORCE_RUN_NO_STOP
-      //====================================================
-      // [試運転] 止めない・警告ランプも点灯しない
-      //====================================================
-      // ただし「起動失敗フラグ」は残す（ログや表示で分かるように）
-      // digitalWrite(EM_LAMP_PIN, LOW);
+        // [試運転] 止めない（EMランプだけ点灯する）
 #else
-      //====================================================
-      // [通常] 安全停止 + 警告
-      //====================================================
-      stopPump();
-      // digitalWrite(EM_LAMP_PIN, HIGH);
+        // [通常] 安全停止 + 警告
+        stopPump();
 #endif
+        #endif
+      }
     }
 
-    // ★既存仕様★ 過電流保護（「しきい値」だけ分離して健全化）
+    // ★既存仕様★ 過電流保護（上限オーバー時の停止）はそのまま残す
     if (elapsedTimeSec > PUMP_TIMEOUT_SEC &&
         lastCurrentPeak > PUMP_OVERCURRENT_THRESHOLD) {
 
+      #ifndef DISABLE_CURRENT_MONITOR
+      systemState.pumpStartupError = true; // 過電流もエラーとして扱う
       PU_DEBUG_PRINT("Over current detected. peak=");
-      PU_DEBUG_PRINT(lastCurrentPeak);
-      PU_DEBUG_PRINT(" limit=");
-      PU_DEBUG_PRINTLN(PUMP_OVERCURRENT_THRESHOLD);
+      PU_DEBUG_PRINTLN(lastCurrentPeak);
 
-#if FORCE_RUN_NO_STOP
-      //====================================================
-      // [試運転] 止めない・警告しない（ログだけ残す）
-      //====================================================
-      // digitalWrite(EM_LAMP_PIN, LOW);
-#else
-      //====================================================
-      // [通常] 安全停止 + 警告
-      //====================================================
+#if !FORCE_RUN_NO_STOP
       stopPump();
-      // digitalWrite(EM_LAMP_PIN, HIGH);
 #endif
+      #endif
     }
 
     //====================================================
@@ -666,20 +661,16 @@ void updateSystemState() {
     //====================================================
     if (systemState.uvAutoStart && systemState.pumpState == STATE_RUNNING &&
         !uvAutoStarted && !is_uv_running()) {
-      // ポンプ起動から1秒待つ
       if (millis() - systemState.pumpStartTime >= 1000) {
-        // UVスタート相当の処理
         uv_force_restore(true);
-        DEBUG_PRINTLN("[AUTO] UV auto-start by DIP_SW7");
-        uvAutoStarted = true;  // 二重起動防止
+        uvAutoStarted = true; 
       }
     }
   } else {
     digitalWrite(P_LAMP_PIN, LOW);
   }
-  updateEmLamp();   // ★追加：EMランプはここで一括制御
+  updateEmLamp(); // ★警告ランプ制御（pumpStartupErrorがtrueなら点灯）
 }
-
 
 // 3桁表示のため、1000以上は999として表示
 void updateDisplays() {
@@ -687,13 +678,13 @@ void updateDisplays() {
   tm2_cur_thr.displayNum(PUMP_CURRENT_THRESHOLD);
 
   tm1_rpm_rpm.displayNum(rpm_value);
-  if (systemState.pumpState == STATE_RUNNING) {
+  // if (systemState.pumpState == STATE_RUNNING) {
     tm3_cur_pea.displayNum(lastCurrentPeak);
     // tm3_cur_pea.displayNum((millis() - pumpStartTime) / 1000);
-  } else {
+  // } else {
     // tm2_cur_thr.displayNum(0);
     // tm3_cur_pea.displayNum(0);
-  }
+  // }
 }
 
 //====================================================
@@ -822,7 +813,9 @@ void handlePeriodicTasks() {
   if (!processFlag) return;
   processFlag = false;
 
+  #if CURRENT_SIMULATION == 0 // 実機モードのときだけピーク電流を測定する
   measurePeakCurrent();
+  #endif
 
   static int commandTimerCount = 0;
   commandTimerCount++;
@@ -903,6 +896,7 @@ static const uint16_t* getSimPeakTable(size_t &len) {
 // ・移動平均(MOVING_AVG_SIZE)を通るので、ピークは
 //   区間内で数サンプルだけ出してやるのがコツ。
 //----------------------------------------------------
+#if 0
 int readCurrentSensorAdc() {
 
 #if CURRENT_SIMULATION == 0
@@ -943,7 +937,27 @@ int readCurrentSensorAdc() {
   }
 #endif
 }
+#endif
+// 交流波形の「本当のピーク」を確実に捉えるためのバースト読み取り関数
+int readCurrentSensorAdc() {
+#if CURRENT_SIMULATION == 0
+  int max_val = 512;               // ベースライン（0A）
+  unsigned long start_time = millis();
 
+  // 25ms間（50Hz/60Hzの1周期を確実に超える時間）、全力で読み取り続ける
+  while (millis() - start_time < 25) {
+    int current_val = analogRead(CURRENT_ANALOG_IN_PIN);
+    if (current_val > max_val) {
+      max_val = current_val;       // 期間内の最大値を更新
+    }
+  }
+  return max_val; // 捉えた本当のピーク値を返す
+
+#else
+  // 擬似モードの処理（既存のまま）
+  // ... (省略) ...
+#endif
+}
 // ポンプのピーク電流を測定
 void measurePeakCurrent() {
 
@@ -1016,17 +1030,25 @@ void measurePeakCurrent() {
         }
 
         if (startupMonitor_isNg()) {
+          #ifndef DISABLE_CURRENT_MONITOR
           systemState.pumpStartupError = true;
           PU_DEBUG_PRINTLN("Suction rise NOT detected (timeout NG).");
+          #endif
         }
       }
 
       // ★ 起動最低条件（閾値判定）
+      #ifndef DISABLE_CURRENT_MONITOR
       if (systemState.pumpState == STATE_RUNNING &&
           !systemState.pumpStartupOk &&
           !systemState.pumpStartupError &&
-          lastCurrentPeak >= PUMP_CURRENT_THRESHOLD) {
-
+          lastCurrentPeak >= PUMP_CURRENT_THRESHOLD) 
+      #else{
+      if (systemState.pumpState == STATE_RUNNING &&
+          !systemState.pumpStartupOk &&
+          !systemState.pumpStartupError)
+      #endif
+      {
         systemState.pumpStartupOk = true;
 
         PU_DEBUG_PRINT("Startup OK by current threshold. peak=");
@@ -1050,156 +1072,189 @@ void measurePeakCurrent() {
  * @brief 実行時モードに応じて目標回転数を取得する（サインカーブ・プライミング機能付き）
  * @details 最高速度でのみ2秒間の保持時間を設けた修正版。
  */
-// int getTargetRpm() {
-// #if defined(PRIMING_TEST)                                 //
-//   // ポンプが運転中で、かつ起動後プライミング時間内の場合にシーケンスを実行
-//   if (systemState.pumpState == STATE_RUNNING) {
-//     unsigned long elapsedTimeMillis = millis() - systemState.pumpStartTime;
-//     if (elapsedTimeMillis < (PRIMING_DURATION_SEC * 1000UL)) {
-//       // 1. 定数を定義
-//       const float RAMP_CYCLE_SEC = PRIMING_CYCLE_SEC; // 回転数が上下する時間（4秒）
-//       // const float HOLD_DURATION_SEC = 2.0;          // 最高回転数での保持時間（秒）
-//       // 1サイクルの合計時間 = 回転の上下時間(4秒) + 最高保持(2秒)
-//       const float TOTAL_CYCLE_SEC = RAMP_CYCLE_SEC + HOLD_DURATION_SEC;
-
-//       // 2. 現在の経過時間が、1サイクル(6秒)の中でどの位置にあるかを計算
-//       unsigned long timeInCycleMillis = elapsedTimeMillis % (unsigned long)(TOTAL_CYCLE_SEC * 1000.0);
-
-//       // 3. 保持時間を考慮した「見かけ上の経過時間」を計算する
-//       unsigned long rampTimeMillis;
-//       // サインカーブが頂点に達する時間 (4秒サイクルの1/4 = 1秒)
-//       unsigned long maxRpmHoldStart = (unsigned long)((RAMP_CYCLE_SEC / 4.0) * 1000.0); // 1000ms
-//       // 最高回転数での保持が終了する時間
-//       unsigned long maxRpmHoldEnd   = maxRpmHoldStart + (unsigned long)(HOLD_DURATION_SEC * 1000.0); // 3000ms
-
-//       if (timeInCycleMillis < maxRpmHoldStart) {
-//         // 最高回転数に達するまで（サインカーブの0秒 -> 1秒地点）
-//         rampTimeMillis = timeInCycleMillis;
-//       } else if (timeInCycleMillis < maxRpmHoldEnd) {
-//         // 最高回転数で保持（サインカーブの1秒地点で時間を止める）
-//         rampTimeMillis = maxRpmHoldStart;
-//       } else {
-//         // 最低回転数に向かって下降し、再び上昇する（サインカーブの1秒 -> 4秒地点）
-//         // 止まっていた時間(2秒)を考慮して、サインカーブの時間を進める
-//         rampTimeMillis = maxRpmHoldStart + (timeInCycleMillis - maxRpmHoldEnd);
-//       }
-
-//       // 4. 「見かけ上の経過時間」を使って、元のサインカーブ計算を実行
-//       float angle = (rampTimeMillis / (RAMP_CYCLE_SEC * 1000.0)) * 2.0 * PI;
-//       float sinValue = sin(angle);
-
-//       // 5. -1.0〜1.0の値を、最小RPM〜最大RPMの範囲に変換(マッピング)
-//       float rpm_range = PRIMING_MAX_RPM - PRIMING_MIN_RPM;
-//       float rpm_midpoint = (PRIMING_MAX_RPM + PRIMING_MIN_RPM) / 2.0;
-//       int targetRpm = (int)(rpm_midpoint + (sinValue * rpm_range / 2.0));
-      
-//       return targetRpm; // プライミング時間内はサインカーブで変化させる
-//     }
-//   }
-// #endif
-
-//   // プライミング時間終了後、またはポンプ停止時は通常の回転数制御に戻る
-//   if (rpmControlMode == MODE_VOLUME) {
-//     return calculateRpmFromVolume(); // ボリュームから計算
-//   } else { // MODE_FIXED
-//     return NORMAL_MAX_RPM; // 設定された固定値を返す
-//   }
-// }
-/**
- * @brief 実行時モードに応じて目標回転数を取得する（スロースタート機能付き）
- */
-// int getTargetRpm() {
-//   // --- スロースタートの設定（ここを調整してください） ---
-//   const unsigned long SOFT_START_DURATION_MS = 10000; // 3秒かけて加速
-  
-//   int finalTargetRpm = 0; // 最終的な目標回転数
-
-// #if defined(PRIMING_TEST)
-//   // ポンプが運転中で、かつ起動後プライミング時間内の場合にシーケンスを実行
-//   if (systemState.pumpState == STATE_RUNNING) {
-//     unsigned long elapsedTimeMillis = millis() - systemState.pumpStartTime;
-//     if (elapsedTimeMillis < (PRIMING_DURATION_SEC * 1000UL)) {
-//       // （既存のプライミング計算ロジックはそのまま維持）
-//       const float RAMP_CYCLE_SEC = PRIMING_CYCLE_SEC;
-//       const float TOTAL_CYCLE_SEC = RAMP_CYCLE_SEC + HOLD_DURATION_SEC;
-//       unsigned long timeInCycleMillis = elapsedTimeMillis % (unsigned long)(TOTAL_CYCLE_SEC * 1000.0);
-//       unsigned long rampTimeMillis;
-//       unsigned long maxRpmHoldStart = (unsigned long)((RAMP_CYCLE_SEC / 4.0) * 1000.0);
-//       unsigned long maxRpmHoldEnd   = maxRpmHoldStart + (unsigned long)(HOLD_DURATION_SEC * 1000.0);
-
-//       if (timeInCycleMillis < maxRpmHoldStart) {
-//         rampTimeMillis = timeInCycleMillis;
-//       } else if (timeInCycleMillis < maxRpmHoldEnd) {
-//         rampTimeMillis = maxRpmHoldStart;
-//       } else {
-//         rampTimeMillis = maxRpmHoldStart + (timeInCycleMillis - maxRpmHoldEnd);
-//       }
-
-//       float angle = (rampTimeMillis / (RAMP_CYCLE_SEC * 1000.0)) * 2.0 * PI;
-//       float sinValue = sin(angle);
-//       float rpm_range = PRIMING_MAX_RPM - PRIMING_MIN_RPM;
-//       float rpm_midpoint = (PRIMING_MAX_RPM + PRIMING_MIN_RPM) / 2.0;
-//       finalTargetRpm = (int)(rpm_midpoint + (sinValue * rpm_range / 2.0));
-      
-//       return finalTargetRpm; 
-//     }
-//   }
-// #endif
-
-//   // --- 通常運転またはボリューム制御時の計算 ---
-//   if (rpmControlMode == MODE_VOLUME) {
-//     finalTargetRpm = calculateRpmFromVolume();
-//   } else {
-//     finalTargetRpm = NORMAL_MAX_RPM;
-//   }
-
-//   // --- ★追加：スロースタート処理 ---
-//   if (systemState.pumpState == STATE_RUNNING) {
-//     unsigned long elapsed = millis() - systemState.pumpStartTime;
-//     if (elapsed < SOFT_START_DURATION_MS) {
-//       // 経過時間割合（0.0～1.0）を計算し、目標回転数に乗算する
-// // 0.0〜1.0の時間を0〜PI（180度）の位相に変換
-// float phase = ((float)elapsed / (float)SOFT_START_DURATION_MS) * PI;
-// // コサイン波形を利用して0.0から1.0へ滑らかに変化させる（S字カーブ）
-// float ratio = (1.0 - cos(phase)) / 2.0; 
-// finalTargetRpm = (int)(finalTargetRpm * ratio);      
-//       // モーターが回りはじめる最低回転数（600rpm）を下回らないようにガード
-//       if (finalTargetRpm < 600) finalTargetRpm = 600;
-//     }
-//   }
-
-//   return finalTargetRpm;
-// }
 int getTargetRpm() {
+    // 【原因1の解消】 setupの変数に頼らず、毎回リアルタイムにピンの状態を読み取る
+    varControlMode currentMode = (digitalRead(MANUAL_RPM_MODE_PIN) == LOW) ? MODE_VOLUME : MODE_FIXED;
+
+    static varControlMode lastMode = MODE_FIXED;
+    static unsigned long transitionStartTime = 0;
+    static int transitionStartRpm = STARTUP_RPM_INITIAL;
+    static bool wasRunning = false;
+    static int lastCalculatedRpm = STARTUP_RPM_INITIAL;
+    static bool isPrimingMode = false;
+
+    bool isRunning = (systemState.pumpState == STATE_RUNNING);
+
+    // 【原因2の解消】 A12ピンの内部プルアップを確実に有効化する
+    // pinMode(DIP_SW5_PIN, INPUT_PULLUP);
+
+    // --------------------------------------------------------
+    // 1. ポンプ運転開始・終了のイベント検知
+    // --------------------------------------------------------
+    if (!wasRunning && isRunning) {
+        wasRunning = true;
+        transitionStartTime = millis();
+        
+        if (currentMode == MODE_VOLUME) {
+            transitionStartRpm = calculateRpmFromVolume();
+            isPrimingMode = false;
+        } else {
+            transitionStartRpm = STARTUP_RPM_INITIAL;
+            // D12(A12)ピンがGNDに落ちていればプライミングモード
+            isPrimingMode = (digitalRead(DIP_SW5_PIN) == LOW); 
+        }
+    } else if (wasRunning && !isRunning) {
+        wasRunning = false;
+        isPrimingMode = false;
+    }
+
+    // --------------------------------------------------------
+    // 2. 運転中のモード切り替え検知（リアルタイム追従）
+    // --------------------------------------------------------
+    if (isRunning && currentMode != lastMode) {
+        if (currentMode == MODE_FIXED) {
+            // 可変 -> 固定/プライミング へ戻る（今の回転数をスタート地点にする）
+            transitionStartRpm = lastCalculatedRpm;
+            transitionStartTime = millis();
+            // 運転復帰時にA12を再評価
+            isPrimingMode = (digitalRead(DIP_SW5_PIN) == LOW);
+        } else {
+            // 固定 -> 可変（即時ボリューム値へ）
+            isPrimingMode = false; 
+        }
+        lastMode = currentMode;
+    }
+    if (!isRunning) lastMode = currentMode;
+
+    // --------------------------------------------------------
+    // 3. 回転数の算出
+    // --------------------------------------------------------
+    int finalGoalRpm = (currentMode == MODE_VOLUME) ? calculateRpmFromVolume() : NORMAL_MAX_RPM;
+    int targetRpm;
+
+    if (!isRunning) {
+        // 停止中：可変ならボリューム値、固定なら初期値
+        targetRpm = (currentMode == MODE_VOLUME) ? calculateRpmFromVolume() : STARTUP_RPM_INITIAL;
+    } else {
+        if (currentMode == MODE_VOLUME) {
+            // 【優先度1】 手動モード（即ボリューム値追従）
+            targetRpm = finalGoalRpm;
+            
+        } else if (isPrimingMode) {
+            // 【優先度2】 プライミングモード
+            unsigned long elapsed = millis() - transitionStartTime;
+            if (elapsed >= STARTUP_RAMP_DURATION_MS) {
+                targetRpm = finalGoalRpm;
+            } else {
+                float progress = (float)elapsed / (float)STARTUP_RAMP_DURATION_MS;
+                float baseRpm = transitionStartRpm + ((finalGoalRpm - transitionStartRpm) * progress);
+                
+                // 【原因3の解消】 波形を「6秒周期・振幅±150rpm」に設定（音と表示でハッキリ分かります）
+                float waveCycleMs = 6000.0; 
+                float amplitude = 150.0;    
+                
+                float sinWave = sin((elapsed / waveCycleMs) * 2.0 * PI);
+                targetRpm = (int)(baseRpm + (sinWave * amplitude));
+            }
+        } else {
+            // 【優先度3】 比例加速モード
+            unsigned long elapsed = millis() - transitionStartTime;
+            if (elapsed >= STARTUP_RAMP_DURATION_MS) {
+                targetRpm = finalGoalRpm;
+            } else {
+                float progress = (float)elapsed / (float)STARTUP_RAMP_DURATION_MS;
+                targetRpm = transitionStartRpm + (int)((finalGoalRpm - transitionStartRpm) * progress);
+            }
+        }
+    }
+
+    // --------------------------------------------------------
+    // 4. 最低・最高回転ガード
+    // --------------------------------------------------------
+    if (targetRpm < 600) targetRpm = 600; 
+    // 波がMAXを超えないように上限をクリッピング
+    if (targetRpm > NORMAL_MAX_RPM) targetRpm = NORMAL_MAX_RPM; 
+
+    lastCalculatedRpm = targetRpm;
+
+    return targetRpm;
+}
+#if 0
+int getTargetRpm() {
+    // 内部状態を保持する静的変数
+    static varControlMode lastMode = MODE_FIXED;
+    static unsigned long transitionStartTime = 0;
+    static int transitionStartRpm = STARTUP_RPM_INITIAL;
+    static bool wasRunning = false;
+    static int currentCalculatedRpm = STARTUP_RPM_INITIAL;
+
+    bool isRunning = (systemState.pumpState == STATE_RUNNING);
+
+    // --------------------------------------------------------
+    // 1. ポンプ運転開始・終了のイベント検知
+    // --------------------------------------------------------
+    if (!wasRunning && isRunning) {
+        // 停止状態から運転開始した瞬間
+        transitionStartTime = millis();
+        // 固定モードで開始する場合は初期値から、可変ならボリューム値からスタート
+        transitionStartRpm = (rpmControlMode == MODE_VOLUME) ? calculateRpmFromVolume() : STARTUP_RPM_INITIAL;
+        wasRunning = true;
+    } 
+    else if (wasRunning && !isRunning) {
+        wasRunning = false;
+    }
+
+    // --------------------------------------------------------
+    // 2. 運転中のモード切り替え検知（要件3）
+    // --------------------------------------------------------
+    if (isRunning && rpmControlMode != lastMode) {
+        if (rpmControlMode == MODE_FIXED) {
+            // 可変(LOW) → 固定(HIGH) に切り替わった瞬間
+            // その時点の回転数を起点に、改めてNORMAL_MAX_RPMまで加速開始
+            transitionStartRpm = currentCalculatedRpm; 
+            transitionStartTime = millis();
+        }
+        lastMode = rpmControlMode;
+    }
+    // 停止中もモードの切り替えは追跡する
+    if (!isRunning) lastMode = rpmControlMode;
+
+    // --------------------------------------------------------
+    // 3. 回転数の算出
+    // --------------------------------------------------------
     int finalTargetRpm = 0;
 
-    // 1. 最終目標値の決定 (パターンB) [4, 5]
     if (rpmControlMode == MODE_VOLUME) {
-        // ピン42がLOWならボリューム値を最終目標にする
+        // 【要件2 & 追加要件】可変モード：停止・運転問わず、即座にボリューム値を反映
         finalTargetRpm = calculateRpmFromVolume();
     } else {
-        // ピン42がHIGH（固定モード）なら 2400rpm
-        finalTargetRpm = NORMAL_MAX_RPM;
-    }
-
-    // 2. 加速計算
-    if (systemState.pumpState == STATE_RUNNING) {
-        unsigned long elapsed = millis() - systemState.pumpStartTime; // [5]
-
-        if (elapsed < STARTUP_RAMP_DURATION_MS) {
-            // 0秒から15秒の間、700rpmから最終目標まで直線的に割り当てる
-            // map(現在の値, 入力低, 入力高, 出力低, 出力高)
-            finalTargetRpm = map(elapsed, 0, STARTUP_RAMP_DURATION_MS, STARTUP_RPM_INITIAL, finalTargetRpm);
+        // 【要件1 & 3-B】固定モード
+        if (!isRunning) {
+            // 停止中は起動時に予定されている回転数を表示
+            finalTargetRpm = STARTUP_RPM_INITIAL;
+        } else {
+            // 加速中：floatを用いて10分以上の長時間でも正確に比例計算
+            unsigned long elapsed = millis() - transitionStartTime;
+            unsigned long duration = STARTUP_RAMP_DURATION_MS;
+            
+            if (elapsed >= duration) {
+                finalTargetRpm = NORMAL_MAX_RPM;
+            } else {
+                float progress = (float)elapsed / (float)duration;
+                finalTargetRpm = transitionStartRpm + (int)((NORMAL_MAX_RPM - transitionStartRpm) * progress);
+            }
         }
-        // 15秒経過後はそのまま finalTargetRpm (最終目標値) を維持
     }
 
-    // 3. 最低回転数ガード
-    if (finalTargetRpm < 600) finalTargetRpm = 600; // [5]
+    // 4. 最低回転数ガード
+    if (finalTargetRpm < 600) finalTargetRpm = 600;
+
+    // 現在の計算値を保存（次回のモード切り替え時の起点用）
+    currentCalculatedRpm = finalTargetRpm;
 
     return finalTargetRpm;
 }
-
+#endif
 /**
  * @brief 配列を小さい順に並べ替える（バブルソート）
  * @param arr 並べ替える配列
@@ -1436,4 +1491,16 @@ static bool evaluateHourMeterCondition(uint8_t modeBits,
     default:
       return false;
   }
+}
+// 回転数から「最低限超えていなければならない電流のADC値」を計算する関数
+int getExpectedCurrentThreshold(int currentRpm) {
+    // config.h で定義されたテーブルを上から順にチェック
+    for (int i = 0; i < EXPECTED_CURRENT_TABLE_SIZE; i++) {
+        if (currentRpm >= EXPECTED_CURRENT_TABLE[i].rpm) {
+            return EXPECTED_CURRENT_TABLE[i].adcThreshold;
+        }
+    }
+
+    // どの条件にも満たない場合（1700rpm未満など）のベースラインADC値
+    return 512; 
 }

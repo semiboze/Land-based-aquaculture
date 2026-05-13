@@ -9,6 +9,7 @@ void dip_setup() {
   pinMode(DIP_SW2_PIN, INPUT_PULLUP);
   pinMode(DIP_SW3_PIN, INPUT_PULLUP);
   pinMode(DIP_SW4_PIN, INPUT_PULLUP);
+  pinMode(DIP_SW5_PIN, INPUT_PULLUP);// [追加] DIPスイッチ5の初期化（アワーメーターリセット条件選択用）
   pinMode(DIP_SW6_PIN, INPUT_PULLUP);
   pinMode(DIP_SW7_PIN, INPUT_PULLUP);
 }

@@ -2,7 +2,8 @@
 //====================================================
 // ファームウェア情報
 //====================================================
-static const char* const FirmwareVersion = "20260416_R4";
+static const char* const FirmwareVersion = "20260514_R1";
+/*
 1. ポンプの回転数 (RPM)
   制御方法: ピン42（MANUAL_RPM_MODE_PIN）をGNDに接続（LOW）することで
   「手動回転数モード」が有効になります。
@@ -30,7 +31,7 @@ static const char* const FirmwareVersion = "20260416_R4";
   ポンプ単独、UV単独、あるいは両方の稼働状況を基準にするなど、動作条件を可変できます。
   UV断線判定方式: SW6（A13ピン）により、1本でも断線したら警告を出すか、
   過半数で出すかを切り替え可能です。
-  UV自動起動: SW7（A14ピン）により、UVランプを自動起動するかどうかを設定できます。
+  UV自動起動: SW7（A14ピン）により、UVランプを自動起動するかどうかを設定できます。*/
 //================================================
 // システム定数
 //================================================
@@ -62,17 +63,36 @@ static const int T_CNT_PIN = 9;                     // ★★★ T_CNT_PINの定
 //====================================================
 // 電流シミュレーション
 //====================================================
-#define CURRENT_SIMULATION   0                      // 0: 実機の analogRead(A1) を読む, 1: 擬似電流を生成して動作確認                
+#define CURRENT_SIMULATION   1                      // 0: 実機の analogRead(A1) を読む, 1: 擬似電流を生成して動作確認                
 #define SIM_SCENARIO         0                      // 0: 吸える（2次上昇あり）, 1: 吸えない（2次上昇なし→タイムアウトで停止）
 #define FORCE_RUN_NO_STOP    1                      // 1: どんな検出でも止めない / EMランプ点灯しない, 0: 通常運用（現状の安全停止あり）
+#define DISABLE_CURRENT_MONITOR 1                   // 1で電流監視機能とエラー判定を無効化
+
+// ====================================================
+// 動的エラー判定用 電流しきい値テーブル
+// ====================================================
+struct CurrentThresholdEntry {
+    int rpm;
+    int adcThreshold;
+};
+
+static const CurrentThresholdEntry EXPECTED_CURRENT_TABLE[] = {
+    // ※ 回転数(rpm)が高い順に記述してください
+    {2000, 530}, // 107W相当のADC値（仮）
+    {1900, 525}, //  94W相当のADC値（仮）
+    {1800, 520}, //  82W相当のADC値（仮）
+    {1700, 515}  //  73W相当のADC値（仮）
+};
+
+// テーブルの要素数を自動計算（変更不要）
+static const int EXPECTED_CURRENT_TABLE_SIZE = sizeof(EXPECTED_CURRENT_TABLE) / sizeof(EXPECTED_CURRENT_TABLE[0]);
 
 //====================================================
 // ポンプ基本設定
 //====================================================
-static const int NORMAL_MAX_RPM          = 2400;    // 固定回転数モードでの最大回転数
-// [修正] ポンプ基本設定
-static const int STARTUP_RPM_INITIAL = 1500;  // 【新規】起動開始時の回転数
-static const int STARTUP_RAMP_DURATION_MS = 30000; // 【新規】加速にかける時間 (30秒)
+static const int NORMAL_MAX_RPM          = 2000;    // 固定回転数モードでの最大回転数
+static const int STARTUP_RPM_INITIAL = 1500;        // 【新規】起動開始時の回転数
+static const unsigned long STARTUP_RAMP_DURATION_MS = 120000UL;// 【新規】起動完了までの時間（ミリ秒）
 #if defined(PRIMING_TEST) // プライミングテストモードが定義されている場合、プライミング時間を短縮してサインカーブで回転数変化させるが無効化
   static const int PRIMING_DURATION_SEC    = 10;      // プライミングを行う時間（秒）【テスト用に短縮】
   static const int PRIMING_DURATION_SEC    = 30;      // プライミングを行う時間（秒）
@@ -84,8 +104,8 @@ static const int STARTUP_RAMP_DURATION_MS = 30000; // 【新規】加速にか�
 
 static const int CURRENT_NOISE_FLOOR = 512;             // 電流ピーク検出用 ノイズ下限（センサ未動作/ノイズ対策）
 // [修正] 起動監視設定
-static const unsigned long DEFINE_CURRENT_STATUS = 45; // [2] 監視タイマーを30秒から45秒に延長
-static const unsigned long PUMP_STARTUP_TIMEOUT_SEC = DEFINE_CURRENT_STATUS; // [3] 45秒に自動同期
+// static const unsigned long DEFINE_CURRENT_STATUS = 45; // [2] 監視タイマーを30秒から45秒に延長
+static const unsigned long PUMP_STARTUP_TIMEOUT_SEC = STARTUP_RAMP_DURATION_MS / 1000UL; // 加速時間と自動同期
 static const unsigned long PUMP_TIMEOUT_SEC = 60;       // 既存の過電流チェック用の時間（既存仕様を維持）
 
 static const int PUMP_CURRENT_THRESHOLD_DEFAULT = 512;  // デフォルトのポンプ電流しきい値
