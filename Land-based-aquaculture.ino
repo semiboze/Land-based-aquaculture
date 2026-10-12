@@ -610,6 +610,11 @@ void updateSystemState() {
 
   if (systemState.pumpState == STATE_RUNNING) {
     digitalWrite(P_LAMP_PIN, HIGH);
+    // ポンプ稼働中はインバータ冷却ファンを必ずONにする。
+    // ファンをスタート操作時の一度だけ制御すると、他の状態更新処理や
+    // 一時的な出力変更後にOFFのままになる可能性があるため、運転状態を
+    // 正として毎回再確定する。
+    fan_on();
     unsigned long elapsedTimeSec = (millis() - systemState.pumpStartTime) / 1000UL;
 
     // -----------------------------------------------------------------
@@ -668,6 +673,7 @@ void updateSystemState() {
     }
   } else {
     digitalWrite(P_LAMP_PIN, LOW);
+    fan_off();
   }
   updateEmLamp(); // ★警告ランプ制御（pumpStartupErrorがtrueなら点灯）
 }
